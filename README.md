@@ -1,0 +1,2 @@
+# stage-runner
+A declarative resource version control plane with automatic promotion gating: safe, automatic rollback of pipeline output data.
