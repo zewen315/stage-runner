@@ -3,10 +3,14 @@ name = "resource-store"
 version = "0.1.0"
 description = "Versioned resource store: metadata + blob CRUD service for Stage Runner"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
+]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
 ]
 
