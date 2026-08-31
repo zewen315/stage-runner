@@ -36,7 +36,44 @@ into run history via Prometheus/Grafana/Alertmanager.
 **Out of scope:** distributed/multi-node scheduling, authn/authz, multi-tenant isolation,
 non-Python workloads.
 
-# Core API & Entities
+# Core Schemas
+
+resources
+- id
+- name
+- current_version_id
+
+resource_versions
+- id
+- resource_id
+- version
+- storage_uri
+- status (pending | validated | rejected | injected)
+- created_at
+
+resource_promotions
+- id
+- resource_id
+- version_id
+- promoted_at
+
+resource_version_dependencies
+- version_id
+- depends_on_id
+
+# Core API
+
+GET /resources/{name}
+POST /resources/{name}/versions
+
+# Timeline
+
+1. Resource Store
+2. Stage definition API
+3. Scheduler v1 (in-process)
+4. Failure injection + manual rollback CLI
+5. Container execution
+6. Observability
 
 # Components
 
