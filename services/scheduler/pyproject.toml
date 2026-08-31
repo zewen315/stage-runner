@@ -1,0 +1,16 @@
+[project]
+name = "scheduler"
+version = "0.1.0"
+description = "DAG scheduler for Stage Runner: resolves and executes stage workloads"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "../../lib"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
