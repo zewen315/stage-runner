@@ -48,14 +48,7 @@ resource_versions
 - resource_id
 - version
 - storage_uri
-- status (pending | validated | rejected | injected)
 - created_at
-
-resource_promotions
-- id
-- resource_id
-- version_id
-- promoted_at
 
 resource_version_dependencies
 - version_id

@@ -1,14 +1,16 @@
 """FastAPI app exposing ResourceStoreService over HTTP.
 
-Backed by in-memory adapters for now -- swapping in real Postgres/MinIO
-adapters only means changing what get_service() constructs; no route
-changes. Domain exceptions (ResourceNotFoundError,
-ResourceAlreadyExistsError) are translated to HTTP status codes here, at
-the boundary, so the service layer stays free of HTTP concerns.
+Backed by real Postgres + MinIO when DATABASE_URL is set (docker-compose
+sets it), and in-memory adapters otherwise (plain `uvicorn api:app` for
+quick local runs, and tests, which override get_service directly anyway).
+Domain exceptions (ResourceNotFoundError, ResourceAlreadyExistsError) are
+translated to HTTP status codes here, at the boundary, so the service layer
+stays free of HTTP concerns.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
@@ -19,9 +21,28 @@ from errors import ResourceAlreadyExistsError, ResourceNotFoundError
 from memory import InMemoryBlobStore, InMemoryMetadataRepository
 from service import ResourceStoreService
 
+
+def _build_service() -> ResourceStoreService:
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url is None:
+        return ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore())
+
+    from postgres_repository import PostgresMetadataRepository
+    from s3_blob_store import S3BlobStore
+
+    metadata = PostgresMetadataRepository(database_url)
+    blobs = S3BlobStore(
+        bucket=os.environ.get("BLOB_BUCKET", "resources"),
+        endpoint_url=os.environ["BLOB_ENDPOINT_URL"],
+        access_key=os.environ["BLOB_ACCESS_KEY"],
+        secret_key=os.environ["BLOB_SECRET_KEY"],
+    )
+    return ResourceStoreService(metadata, blobs)
+
+
 app = FastAPI(title="Resource Store")
 
-_service = ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore())
+_service = _build_service()
 
 
 def get_service() -> ResourceStoreService:
