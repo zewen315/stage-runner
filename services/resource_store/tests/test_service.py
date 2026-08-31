@@ -2,6 +2,7 @@ import pytest
 
 from errors import ResourceAlreadyExistsError, ResourceNotFoundError
 from memory import InMemoryBlobStore, InMemoryMetadataRepository
+from scenario import Step, run
 from service import ResourceStoreService
 
 
@@ -12,113 +13,168 @@ def service():
 
 class TestCreateResource:
     def test_creates_a_new_resource(self, service):
-        resource = service.create_resource("fetch")
-
-        assert resource.name == "fetch"
-        assert resource.current_version_id is None
+        run(
+            service,
+            [
+                Step(
+                    "create_resource",
+                    ["fetch"],
+                    expect=lambda r: (r.name, r.current_version_id) == ("fetch", None),
+                ),
+            ],
+        )
 
     def test_duplicate_name_raises(self, service):
-        service.create_resource("fetch")
-
-        with pytest.raises(ResourceAlreadyExistsError):
-            service.create_resource("fetch")
+        run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("create_resource", ["fetch"], raises=ResourceAlreadyExistsError),
+            ],
+        )
 
 
 class TestUploadVersion:
     def test_first_upload_is_version_one(self, service):
-        service.create_resource("fetch")
-
-        version = service.upload_version("fetch", {"n": 1})
-
-        assert version.version == 1
+        run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}], expect=lambda v: v.version == 1),
+            ],
+        )
 
     def test_uploads_are_sequential(self, service):
-        service.create_resource("fetch")
-
-        v1 = service.upload_version("fetch", {"n": 1})
-        v2 = service.upload_version("fetch", {"n": 2})
-
-        assert (v1.version, v2.version) == (1, 2)
+        results = run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}], name="v1"),
+                Step("upload_version", ["fetch", {"n": 2}], name="v2"),
+            ],
+        )
+        assert (results["v1"].version, results["v2"].version) == (1, 2)
 
     def test_upload_does_not_promote(self, service):
-        service.create_resource("fetch")
-
-        service.upload_version("fetch", {"n": 1})
-
-        with pytest.raises(ResourceNotFoundError):
-            service.get("fetch")
+        run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}]),
+                Step("get", ["fetch"], raises=ResourceNotFoundError),
+            ],
+        )
 
     def test_upload_to_unknown_resource_raises(self, service):
-        with pytest.raises(ResourceNotFoundError):
-            service.upload_version("fetch", {"n": 1})
+        run(service, [Step("upload_version", ["fetch", {"n": 1}], raises=ResourceNotFoundError)])
 
 
 class TestUpdateDependencies:
     def test_records_direct_dependencies(self, service):
-        service.create_resource("fetch")
-        service.create_resource("transform")
-        upstream = service.upload_version("fetch", {"n": 1})
-        downstream = service.upload_version("transform", {"n": 2})
-
-        service.update_dependencies(
-            "transform", downstream.version, depends_on=[("fetch", upstream.version)]
+        results = run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("create_resource", ["transform"]),
+                Step("upload_version", ["fetch", {"n": 1}], name="upstream"),
+                Step("upload_version", ["transform", {"n": 2}], name="downstream"),
+                Step(
+                    "update_dependencies",
+                    [
+                        "transform",
+                        lambda r: r["downstream"].version,
+                        lambda r: [("fetch", r["upstream"].version)],
+                    ],
+                ),
+                Step("dependencies", ["transform", lambda r: r["downstream"].version], name="deps"),
+            ],
         )
-
-        deps = service.dependencies("transform", downstream.version)
-        assert [d.id for d in deps] == [upstream.id]
+        assert [d.id for d in results["deps"]] == [results["upstream"].id]
 
     def test_update_replaces_the_previous_set(self, service):
-        service.create_resource("fetch")
-        service.create_resource("transform")
-        v1 = service.upload_version("fetch", {"n": 1})
-        v2 = service.upload_version("fetch", {"n": 2})
-        downstream = service.upload_version("transform", {"n": 3})
-
-        service.update_dependencies("transform", downstream.version, depends_on=[("fetch", v1.version)])
-        service.update_dependencies("transform", downstream.version, depends_on=[("fetch", v2.version)])
-
-        deps = service.dependencies("transform", downstream.version)
-        assert [d.id for d in deps] == [v2.id]
+        results = run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("create_resource", ["transform"]),
+                Step("upload_version", ["fetch", {"n": 1}], name="v1"),
+                Step("upload_version", ["fetch", {"n": 2}], name="v2"),
+                Step("upload_version", ["transform", {"n": 3}], name="downstream"),
+                Step(
+                    "update_dependencies",
+                    ["transform", lambda r: r["downstream"].version, lambda r: [("fetch", r["v1"].version)]],
+                ),
+                Step(
+                    "update_dependencies",
+                    ["transform", lambda r: r["downstream"].version, lambda r: [("fetch", r["v2"].version)]],
+                ),
+                Step("dependencies", ["transform", lambda r: r["downstream"].version], name="deps"),
+            ],
+        )
+        assert [d.id for d in results["deps"]] == [results["v2"].id]
 
     def test_unknown_upstream_resource_raises(self, service):
-        service.create_resource("transform")
-        downstream = service.upload_version("transform", {"n": 1})
-
-        with pytest.raises(ResourceNotFoundError):
-            service.update_dependencies("transform", downstream.version, depends_on=[("fetch", 1)])
+        run(
+            service,
+            [
+                Step("create_resource", ["transform"]),
+                Step("upload_version", ["transform", {"n": 1}], name="downstream"),
+                Step(
+                    "update_dependencies",
+                    ["transform", lambda r: r["downstream"].version, [("fetch", 1)]],
+                    raises=ResourceNotFoundError,
+                ),
+            ],
+        )
 
     def test_unknown_upstream_version_raises(self, service):
-        service.create_resource("fetch")
-        service.create_resource("transform")
-        downstream = service.upload_version("transform", {"n": 1})
-
-        with pytest.raises(ResourceNotFoundError):
-            service.update_dependencies("transform", downstream.version, depends_on=[("fetch", 99)])
+        run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("create_resource", ["transform"]),
+                Step("upload_version", ["transform", {"n": 1}], name="downstream"),
+                Step(
+                    "update_dependencies",
+                    ["transform", lambda r: r["downstream"].version, [("fetch", 99)]],
+                    raises=ResourceNotFoundError,
+                ),
+            ],
+        )
 
 
 class TestPromote:
     def test_promote_makes_a_version_current(self, service):
-        service.create_resource("fetch")
-        version = service.upload_version("fetch", {"n": 1})
-
-        service.promote("fetch", version.version)
-
-        current = service.get("fetch")
-        assert current.version.version == version.version
-        assert current.value == {"n": 1}
+        results = run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}], name="v1"),
+                Step("promote", ["fetch", lambda r: r["v1"].version]),
+                Step("get", ["fetch"], name="current", expect=lambda snap: snap.value == {"n": 1}),
+            ],
+        )
+        assert results["current"].version.version == results["v1"].version
 
     def test_promote_unknown_version_raises(self, service):
-        service.create_resource("fetch")
-
-        with pytest.raises(ResourceNotFoundError):
-            service.promote("fetch", 99)
+        run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("promote", ["fetch", 99], raises=ResourceNotFoundError),
+            ],
+        )
 
     def test_promoting_a_later_version_replaces_current(self, service):
-        service.create_resource("fetch")
-        v1 = service.upload_version("fetch", {"n": 1})
-        v2 = service.upload_version("fetch", {"n": 2})
-
-        service.promote("fetch", v1.version)
-        service.promote("fetch", v2.version)
-
-        assert service.get("fetch").value == {"n": 2}
+        results = run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}], name="v1"),
+                Step("upload_version", ["fetch", {"n": 2}], name="v2"),
+                Step("promote", ["fetch", lambda r: r["v1"].version]),
+                Step("promote", ["fetch", lambda r: r["v2"].version]),
+                Step("get", ["fetch"], name="current"),
+            ],
+        )
+        assert results["current"].value == {"n": 2}
