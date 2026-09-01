@@ -1,10 +1,10 @@
 [project]
-name = "scheduler"
+name = "runner"
 version = "0.1.0"
-description = "Scheduler for Stage Runner: drains trigger requests and dispatches stage-by-stage, dependency-aware, to the Runner worker"
+description = "Runner worker for Stage Runner: consumes queued runs and executes stage workloads"
 requires-python = ">=3.12"
 dependencies = [
-    "psycopg[binary]>=3.3.4",
+    "httpx>=0.28.1",
     "redis>=8.1.0",
 ]
 

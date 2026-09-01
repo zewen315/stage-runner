@@ -1,6 +1,8 @@
-"""Background worker: the only thing that consumes run requests off the
-queue and actually executes a workflow. Nothing user-facing calls this
-directly -- the Workflow Service enqueues, this dequeues.
+"""Background worker: the only thing that consumes stage-run dispatches
+off the queue and actually executes a stage. Nothing user-facing calls
+this directly -- the Scheduler service is the sole thing that pushes onto
+the queue, one stage at a time; the worker has no DAG knowledge, it just
+executes exactly the one stage it's handed.
 
 `process_message` takes its collaborators (a ResourceClient, a report
 callback) as parameters rather than constructing them itself, so it's
@@ -22,12 +24,11 @@ from typing import Callable
 import httpx
 import redis
 from resource_store_client import HttpResourceClient, ResourceClient
-
-from runner import Runner
-from scheduler import Scheduler
 from workflow_loader import load_workflow
 
-QUEUE_KEY = "stagerunner:runs"
+from runner import Runner
+
+QUEUE_KEY = "stagerunner:stage_runs"
 
 Report = Callable[[str, int, str, dict], None]
 
@@ -40,31 +41,33 @@ def process_message(
     resources: ResourceClient,
     report: Report,
 ) -> None:
-    run_id = message["run_id"]
+    stage_run_id = message["stage_run_id"]
     workflow_name = message["workflow_name"]
+    stage_name = message["stage_name"]
+    input_versions = message["input_versions"]
+    promote = message["promote"]
+    is_test = message["workflow_run_id"] is None
 
-    report(workflow_name, run_id, "start", {})
+    report(workflow_name, stage_run_id, "start", {})
 
     try:
         workflow_dir = workflows_root / workflow_name
         output_dir = output_root / workflow_name
         registry = load_workflow(workflow_dir)
+        stage_def = registry.get(stage_name)
         runner = Runner(resources, workflow_dir=workflow_dir, output_dir=output_dir)
-        result = Scheduler(registry, runner).run()
+        output_version = runner.run_stage(stage_def, input_versions, promote, is_test=is_test)
     except Exception as exc:  # noqa: BLE001 -- report and move on, don't crash the worker
-        report(workflow_name, run_id, "fail", {"error": str(exc)})
+        report(workflow_name, stage_run_id, "fail", {"error": str(exc)})
         return
 
-    if result.failed:
-        report(workflow_name, run_id, "fail", {"error": f"{result.failed}: {result.error}"})
-    else:
-        report(workflow_name, run_id, "complete", {})
+    report(workflow_name, stage_run_id, "complete", {"output_version": output_version})
 
 
 def _http_report(workflow_service_url: str) -> Report:
-    def report(workflow_name: str, run_id: int, action: str, body: dict) -> None:
+    def report(workflow_name: str, stage_run_id: int, action: str, body: dict) -> None:
         response = httpx.post(
-            f"{workflow_service_url}/workflows/{workflow_name}/runs/{run_id}/{action}",
+            f"{workflow_service_url}/workflows/{workflow_name}/stage-runs/{stage_run_id}/{action}",
             json=body,
             timeout=10,
         )

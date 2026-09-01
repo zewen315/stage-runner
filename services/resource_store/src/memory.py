@@ -47,7 +47,7 @@ class InMemoryMetadataRepository:
         return (max(existing) if existing else 0) + 1
 
     def record_version(
-        self, resource_id: int, version: int, storage_uri: str, created_at: str
+        self, resource_id: int, version: int, storage_uri: str, created_at: str, is_test: bool = False
     ) -> ResourceVersion:
         version_id = self._next_version_id
         self._next_version_id += 1
@@ -57,6 +57,7 @@ class InMemoryMetadataRepository:
             version=version,
             storage_uri=storage_uri,
             created_at=created_at,
+            is_test=is_test,
         )
         self._versions[version_id] = record
         self._version_ids_by_resource[resource_id][version] = version_id

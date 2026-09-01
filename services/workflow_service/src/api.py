@@ -1,13 +1,21 @@
 """FastAPI app exposing WorkflowService over HTTP.
 
-Two callers, two halves of the API:
-- client-facing: POST a run request, GET its status. This is the entire
-  surface the CLI (or a future UI) talks to.
-- worker-facing: start/complete/fail. Only the Scheduler worker calls
-  these, as it consumes the queue and makes progress on a run.
+Three groups of routes:
+- client-facing intake: POST a workflow-level or stage-level trigger
+  request, GET its status. This is the entire surface the CLI (or a future
+  UI) talks to for triggering work.
+- client-facing inspection: GET a WorkflowRun and its StageRuns, or a
+  single StageRun directly, for debugging/auditing.
+- worker-facing: start/complete/fail on a StageRun. Only the Runner worker
+  calls these, as it makes progress on the one stage it was dispatched.
 
-Backed by real Postgres + Redis when DATABASE_URL/REDIS_URL are set
-(docker-compose sets them), in-memory otherwise.
+Everything here writes to Postgres and stops -- it never touches Redis and
+never creates a `runs`/`stage_runs` row itself. The Scheduler service polls
+`schedules` separately, is the sole creator of `runs`/`stage_runs`, and is
+the only thing that pushes onto the queue.
+
+Backed by real Postgres when DATABASE_URL is set (docker-compose sets it),
+in-memory otherwise.
 """
 
 from __future__ import annotations
@@ -19,23 +27,35 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-from errors import RunNotFoundError, WorkflowNotFoundError
-from memory import InMemoryRunQueue, InMemoryRunRepository
+from errors import RunNotFoundError, ScheduleNotFoundError, StageRunNotFoundError, WorkflowNotFoundError
+from memory import InMemoryScheduleRepository, InMemoryStageRunRepository, InMemoryWorkflowRunRepository
 from service import WorkflowService
 
 
 def _build_service() -> WorkflowService:
     workflows_root = Path(os.environ.get("WORKFLOWS_ROOT", "../../workflows")).resolve()
     database_url = os.environ.get("DATABASE_URL")
-    redis_url = os.environ.get("REDIS_URL")
 
-    if database_url is None or redis_url is None:
-        return WorkflowService(InMemoryRunRepository(), InMemoryRunQueue(), workflows_root)
+    if database_url is None:
+        return WorkflowService(
+            InMemoryScheduleRepository(),
+            InMemoryWorkflowRunRepository(),
+            InMemoryStageRunRepository(),
+            workflows_root,
+        )
 
-    from postgres_repository import PostgresRunRepository
-    from redis_queue import RedisRunQueue
+    from postgres_repository import (
+        PostgresScheduleRepository,
+        PostgresStageRunRepository,
+        PostgresWorkflowRunRepository,
+    )
 
-    return WorkflowService(PostgresRunRepository(database_url), RedisRunQueue(redis_url), workflows_root)
+    return WorkflowService(
+        PostgresScheduleRepository(database_url),
+        PostgresWorkflowRunRepository(database_url),
+        PostgresStageRunRepository(database_url),
+        workflows_root,
+    )
 
 
 app = FastAPI(title="Workflow Service")
@@ -57,7 +77,30 @@ async def handle_run_not_found(request: Request, exc: RunNotFoundError) -> JSONR
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
-class RunResponse(BaseModel):
+@app.exception_handler(StageRunNotFoundError)
+async def handle_stage_run_not_found(request: Request, exc: StageRunNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(ScheduleNotFoundError)
+async def handle_schedule_not_found(request: Request, exc: ScheduleNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+class ScheduleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workflow_name: str
+    scope: str
+    stage_name: str | None
+    status: str
+    error: str | None
+    run_id: int | None
+    stage_run_id: int | None
+
+
+class WorkflowRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -69,35 +112,96 @@ class RunResponse(BaseModel):
     error: str | None
 
 
-class FailRunRequest(BaseModel):
+class StageRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workflow_run_id: int | None
+    workflow_name: str
+    stage_name: str
+    input_versions: dict[str, int]
+    promote: bool
+    output_version: int | None
+    status: str
+    requested_at: str
+    started_at: str | None
+    finished_at: str | None
+    error: str | None
+
+
+class RequestStageRunRequest(BaseModel):
+    input_versions: dict[str, int] = {}
+    promote: bool = False
+
+
+class CompleteStageRunRequest(BaseModel):
+    output_version: int | None = None
+
+
+class FailStageRunRequest(BaseModel):
     error: str
 
 
-@app.post("/workflows/{name}/runs", response_model=RunResponse, status_code=202)
+@app.post("/workflows/{name}/runs", response_model=ScheduleResponse, status_code=202)
 def request_run(name: str, service: WorkflowService = Depends(get_service)):
-    return service.request_run(name)
+    schedule = service.request_run(name)
+    return service.get_schedule_status(name, schedule.id)
 
 
-@app.get("/workflows/{name}/runs/{run_id}", response_model=RunResponse)
+@app.post("/workflows/{name}/stages/{stage}/runs", response_model=ScheduleResponse, status_code=202)
+def request_stage_run(
+    name: str,
+    stage: str,
+    body: RequestStageRunRequest,
+    service: WorkflowService = Depends(get_service),
+):
+    schedule = service.request_stage_run(name, stage, body.input_versions, body.promote)
+    return service.get_schedule_status(name, schedule.id)
+
+
+@app.get("/workflows/{name}/schedules/{schedule_id}", response_model=ScheduleResponse)
+def get_schedule_status(name: str, schedule_id: int, service: WorkflowService = Depends(get_service)):
+    return service.get_schedule_status(name, schedule_id)
+
+
+@app.get("/workflows/{name}/runs/{run_id}", response_model=WorkflowRunResponse)
 def get_run(name: str, run_id: int, service: WorkflowService = Depends(get_service)):
     return service.get_run(name, run_id)
 
 
-@app.post("/workflows/{name}/runs/{run_id}/start", status_code=204)
-def start_run(name: str, run_id: int, service: WorkflowService = Depends(get_service)) -> None:
-    service.start_run(name, run_id)
+@app.get("/workflows/{name}/runs/{run_id}/stage-runs", response_model=list[StageRunResponse])
+def list_stage_runs_for_run(name: str, run_id: int, service: WorkflowService = Depends(get_service)):
+    return service.list_stage_runs_for_run(name, run_id)
 
 
-@app.post("/workflows/{name}/runs/{run_id}/complete", status_code=204)
-def complete_run(name: str, run_id: int, service: WorkflowService = Depends(get_service)) -> None:
-    service.complete_run(name, run_id)
+@app.get("/workflows/{name}/stage-runs/{stage_run_id}", response_model=StageRunResponse)
+def get_stage_run(name: str, stage_run_id: int, service: WorkflowService = Depends(get_service)):
+    return service.get_stage_run(name, stage_run_id)
 
 
-@app.post("/workflows/{name}/runs/{run_id}/fail", status_code=204)
-def fail_run(
-    name: str, run_id: int, body: FailRunRequest, service: WorkflowService = Depends(get_service)
+@app.post("/workflows/{name}/stage-runs/{stage_run_id}/start", status_code=204)
+def start_stage_run(name: str, stage_run_id: int, service: WorkflowService = Depends(get_service)) -> None:
+    service.start_stage_run(name, stage_run_id)
+
+
+@app.post("/workflows/{name}/stage-runs/{stage_run_id}/complete", status_code=204)
+def complete_stage_run(
+    name: str,
+    stage_run_id: int,
+    body: CompleteStageRunRequest,
+    service: WorkflowService = Depends(get_service),
 ) -> None:
-    service.fail_run(name, run_id, body.error)
+    service.complete_stage_run(name, stage_run_id, body.output_version)
+
+
+@app.post("/workflows/{name}/stage-runs/{stage_run_id}/fail", status_code=204)
+def fail_stage_run(
+    name: str,
+    stage_run_id: int,
+    body: FailStageRunRequest,
+    service: WorkflowService = Depends(get_service),
+) -> None:
+    service.fail_stage_run(name, stage_run_id, body.error)
 
 
 @app.get("/healthz")

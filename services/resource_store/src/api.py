@@ -76,6 +76,7 @@ class ResourceResponse(BaseModel):
 
 class UploadVersionRequest(BaseModel):
     value: Any
+    is_test: bool = False
 
 
 class ResourceVersionResponse(BaseModel):
@@ -86,6 +87,7 @@ class ResourceVersionResponse(BaseModel):
     version: int
     storage_uri: str
     created_at: str
+    is_test: bool
 
 
 class UpdateDependenciesRequest(BaseModel):
@@ -117,7 +119,7 @@ def create_resource(
 def upload_version(
     name: str, body: UploadVersionRequest, service: ResourceStoreService = Depends(get_service)
 ):
-    return service.upload_version(name, body.value)
+    return service.upload_version(name, body.value, body.is_test)
 
 
 @app.put("/resources/{name}/versions/{version}/dependencies", status_code=204)

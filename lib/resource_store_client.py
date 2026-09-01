@@ -1,6 +1,6 @@
 """What a caller needs from the Resource Store, as a Protocol -- so code
-that depends on it (e.g. the Scheduler's Runner) can be unit-tested against
-an in-memory fake instead of a real HTTP call.
+that depends on it (e.g. the Runner) can be unit-tested against an
+in-memory fake instead of a real HTTP call.
 
 `HttpResourceClient` is the real adapter, talking to resource_store's REST
 API over the network. This module lives in lib/, shared by any service that
@@ -18,8 +18,9 @@ import httpx
 class ResourceClient(Protocol):
     def create_resource_if_missing(self, name: str) -> None: ...
 
-    def upload_version(self, name: str, value: Any) -> int:
-        """Returns the new version number."""
+    def upload_version(self, name: str, value: Any, is_test: bool = False) -> int:
+        """Returns the new version number. Doesn't make it current -- call
+        `promote` separately for that."""
         ...
 
     def update_dependencies(self, name: str, version: int, depends_on: list[tuple[str, int]]) -> None: ...
@@ -28,6 +29,10 @@ class ResourceClient(Protocol):
 
     def get(self, name: str) -> tuple[int, Any]:
         """Returns (version, value) of the current version."""
+        ...
+
+    def get_version(self, name: str, version: int) -> Any:
+        """Returns the value of a specific, possibly non-current, version."""
         ...
 
 
@@ -40,8 +45,10 @@ class HttpResourceClient:
         if response.status_code not in (201, 409):
             response.raise_for_status()
 
-    def upload_version(self, name: str, value: Any) -> int:
-        response = self._http.post(f"/resources/{name}/versions", json={"value": value})
+    def upload_version(self, name: str, value: Any, is_test: bool = False) -> int:
+        response = self._http.post(
+            f"/resources/{name}/versions", json={"value": value, "is_test": is_test}
+        )
         response.raise_for_status()
         return response.json()["version"]
 
@@ -62,29 +69,45 @@ class HttpResourceClient:
         body = response.json()
         return body["version"]["version"], body["value"]
 
+    def get_version(self, name: str, version: int) -> Any:
+        response = self._http.get(f"/resources/{name}/versions/{version}")
+        response.raise_for_status()
+        return response.json()["value"]
+
 
 class InMemoryResourceClient:
-    """Fake for tests: same contract, no network."""
+    """Fake for tests: same contract, no network. Retains every uploaded
+    version (not just current) so `get_version` can look up history, and
+    keeps "current" as an explicit, separate pointer only `promote` moves --
+    `upload_version` alone does not make a version current, matching the
+    real service."""
 
     def __init__(self) -> None:
-        self._current: dict[str, tuple[int, Any]] = {}
+        self._versions: dict[tuple[str, int], Any] = {}
+        self._current_version: dict[str, int] = {}
         self._next_version: dict[str, int] = {}
         self.dependencies_recorded: dict[tuple[str, int], list[tuple[str, int]]] = {}
+        self.is_test_by_version: dict[tuple[str, int], bool] = {}
 
     def create_resource_if_missing(self, name: str) -> None:
         self._next_version.setdefault(name, 1)
 
-    def upload_version(self, name: str, value: Any) -> int:
+    def upload_version(self, name: str, value: Any, is_test: bool = False) -> int:
         version = self._next_version.get(name, 1)
         self._next_version[name] = version + 1
-        self._current[name] = (version, value)
+        self._versions[(name, version)] = value
+        self.is_test_by_version[(name, version)] = is_test
         return version
 
     def update_dependencies(self, name: str, version: int, depends_on: list[tuple[str, int]]) -> None:
         self.dependencies_recorded[(name, version)] = list(depends_on)
 
     def promote(self, name: str, version: int) -> None:
-        pass  # upload_version already made it current in this fake
+        self._current_version[name] = version
 
     def get(self, name: str) -> tuple[int, Any]:
-        return self._current[name]
+        version = self._current_version[name]
+        return version, self._versions[(name, version)]
+
+    def get_version(self, name: str, version: int) -> Any:
+        return self._versions[(name, version)]

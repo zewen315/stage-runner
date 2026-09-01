@@ -36,7 +36,9 @@ into run history via Prometheus/Grafana/Alertmanager.
 **Out of scope:** distributed/multi-node scheduling, authn/authz, multi-tenant isolation,
 non-Python workloads.
 
-# Core Schemas
+# Core Schemas & API
+
+## Resource Store
 
 resources
 - id
@@ -54,10 +56,61 @@ resource_version_dependencies
 - version_id
 - depends_on_id
 
-# Core API
+API
+- POST /resources
+- POST /resources/{name}/versions
+- PUT /resources/{name}/versions/{version}/dependencies
+- POST /resources/{name}/promotions
+- GET /resources/{name}
+- GET /resources/{name}/versions/{version}
+- GET /resources/{name}/versions/{version}/dependencies
 
-GET /resources/{name}
-POST /resources/{name}/versions
+## Workflow Service
+
+runs
+- id
+- workflow_name
+- status
+- requested_at
+- started_at
+- finished_at
+- error
+- dispatched_at (internal — set by the Scheduler once it's pushed the run onto Redis)
+
+schedules
+- id
+- workflow_name
+- cron_expression
+- enabled
+- next_run_at
+- created_at
+
+Both tables live in the Workflow Service's own Postgres database. `POST /runs` and
+`POST /schedules` only ever write a row here — the Scheduler is a separate polling service that
+reads `runs`/`schedules` directly from this database, dispatches due work to Redis, and the
+Runner worker consumes that queue and calls back into the `start`/`complete`/`fail` endpoints.
+
+API
+- POST /workflows/{name}/runs
+- GET /workflows/{name}/runs/{run_id}
+- POST /workflows/{name}/runs/{run_id}/start
+- POST /workflows/{name}/runs/{run_id}/complete
+- POST /workflows/{name}/runs/{run_id}/fail
+- POST /workflows/{name}/schedules
+- GET /workflows/{name}/schedules
+
+## Scheduler
+
+No client-facing API — an internal poller with no HTTP surface, ticking every
+`POLL_INTERVAL_SECONDS` against the Workflow Service's own Postgres database:
+1. reads `schedules` for `enabled` rows with `next_run_at <= now`; for each, inserts a `runs`
+   row and advances `next_run_at`
+2. reads `runs` for rows with `dispatched_at IS NULL` — covering both one-off runs and cron runs
+   just spawned in step 1; for each, pushes onto Redis and sets `dispatched_at`
+
+Redis message (list `stagerunner:runs`)
+- run_id
+- workflow_name
 
 # Timeline
 

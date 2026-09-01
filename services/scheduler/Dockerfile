@@ -11,4 +11,4 @@ COPY lib/ ./lib/
 
 ENV PYTHONPATH=/app/lib
 
-CMD ["uv", "run", "--no-dev", "python", "src/worker.py"]
+CMD ["uv", "run", "--no-dev", "python", "src/poller.py"]

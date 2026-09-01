@@ -65,8 +65,22 @@ services:
       - "8001:8000"
     environment:
       DATABASE_URL: postgresql://stagerunner:stagerunner@postgres:5432/workflow_service
+      WORKFLOWS_ROOT: /workflows
+    volumes:
+      - ./workflows:/workflows:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://stagerunner:stagerunner@postgres:5432/workflow_service
       REDIS_URL: redis://redis:6379
       WORKFLOWS_ROOT: /workflows
+      POLL_INTERVAL_SECONDS: "2"
     volumes:
       - ./workflows:/workflows:ro
     depends_on:
@@ -75,10 +89,10 @@ services:
       redis:
         condition: service_healthy
 
-  scheduler:
+  runner:
     build:
       context: .
-      dockerfile: services/scheduler/Dockerfile
+      dockerfile: services/runner/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379
       RESOURCE_STORE_URL: http://resource-store:8000

@@ -1,13 +1,12 @@
 [project]
 name = "workflow-service"
 version = "0.1.0"
-description = "Control plane for workflow runs: accepts run requests, tracks status, enqueues work for the Scheduler"
+description = "Control plane for workflow/stage trigger requests and their status; the Scheduler owns dispatch and execution tracking"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.4",
     "psycopg[binary]>=3.3.4",
-    "redis>=5.0",
 ]
 
 [dependency-groups]

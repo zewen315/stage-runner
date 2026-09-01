@@ -33,12 +33,14 @@ class ResourceStoreService:
     def create_resource(self, name: str) -> Resource:
         return self._metadata.create_resource(name)
 
-    def upload_version(self, name: str, value: Any) -> ResourceVersion:
+    def upload_version(self, name: str, value: Any, is_test: bool = False) -> ResourceVersion:
         """Write the value to blob storage, then record it as a new,
         immutable version. The blob is written before the metadata row so a
         failure between the two steps leaves an orphaned blob (harmless)
         rather than a metadata row pointing at a blob that was never
-        written. Does not promote."""
+        written. Does not promote. `is_test` marks a version produced by a
+        standalone/ad-hoc StageRun rather than an orchestrated one, so
+        version history can tell real pipeline output from manual probes."""
         resource = self._require_resource(name)
         version_number = self._metadata.next_version(resource.id)
         storage_uri = _storage_uri(name, version_number)
@@ -48,6 +50,7 @@ class ResourceStoreService:
             version=version_number,
             storage_uri=storage_uri,
             created_at=_utcnow(),
+            is_test=is_test,
         )
 
     def update_dependencies(self, name: str, version: int, depends_on: list[tuple[str, int]]) -> None:

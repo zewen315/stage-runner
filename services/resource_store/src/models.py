@@ -22,6 +22,7 @@ class ResourceVersion:
     version: int
     storage_uri: str
     created_at: str
+    is_test: bool
 
 
 @dataclass(frozen=True)

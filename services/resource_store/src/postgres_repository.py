@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS resource_versions (
     version      INTEGER NOT NULL CHECK (version > 0),
     storage_uri  TEXT NOT NULL,
     created_at   TIMESTAMPTZ NOT NULL,
+    is_test      BOOLEAN NOT NULL DEFAULT false,
     UNIQUE (resource_id, version)
 );
 
@@ -85,16 +86,16 @@ class PostgresMetadataRepository:
             return cur.fetchone()[0]
 
     def record_version(
-        self, resource_id: int, version: int, storage_uri: str, created_at: str
+        self, resource_id: int, version: int, storage_uri: str, created_at: str, is_test: bool = False
     ) -> ResourceVersion:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO resource_versions (resource_id, version, storage_uri, created_at)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO resource_versions (resource_id, version, storage_uri, created_at, is_test)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (resource_id, version, storage_uri, created_at),
+                (resource_id, version, storage_uri, created_at, is_test),
             )
             version_id = cur.fetchone()[0]
 
@@ -104,13 +105,14 @@ class PostgresMetadataRepository:
             version=version,
             storage_uri=storage_uri,
             created_at=created_at,
+            is_test=is_test,
         )
 
     def get_version(self, resource_id: int, version: int) -> ResourceVersion | None:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, resource_id, version, storage_uri, created_at
+                SELECT id, resource_id, version, storage_uri, created_at, is_test
                 FROM resource_versions WHERE resource_id = %s AND version = %s
                 """,
                 (resource_id, version),
@@ -122,7 +124,7 @@ class PostgresMetadataRepository:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, resource_id, version, storage_uri, created_at
+                SELECT id, resource_id, version, storage_uri, created_at, is_test
                 FROM resource_versions WHERE id = %s
                 """,
                 (version_id,),
@@ -138,6 +140,7 @@ class PostgresMetadataRepository:
             version=row[2],
             storage_uri=row[3],
             created_at=row[4].isoformat(),
+            is_test=row[5],
         )
 
     def set_dependencies(self, version_id: int, depends_on_ids: list[int]) -> None:
