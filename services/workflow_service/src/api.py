@@ -167,6 +167,11 @@ def get_schedule_status(name: str, schedule_id: int, service: WorkflowService = 
     return service.get_schedule_status(name, schedule_id)
 
 
+@app.get("/workflows/{name}/schedules", response_model=list[ScheduleResponse])
+def list_pending_schedules(name: str, service: WorkflowService = Depends(get_service)):
+    return service.list_pending_schedules(name)
+
+
 @app.get("/workflows/{name}/runs", response_model=list[WorkflowRunResponse])
 def list_runs(name: str, limit: int = 50, service: WorkflowService = Depends(get_service)):
     return service.list_runs(name, limit)

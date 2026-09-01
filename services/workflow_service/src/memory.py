@@ -40,6 +40,14 @@ class InMemoryScheduleRepository:
             return None
         return schedule
 
+    def list_pending(self, workflow_name: str) -> list[Schedule]:
+        matching = [
+            s
+            for s in self._schedules.values()
+            if s.workflow_name == workflow_name and s.dispatched_at is None
+        ]
+        return sorted(matching, key=lambda s: s.id, reverse=True)
+
     def mark_dispatched(self, schedule_id: int, *, dispatched_at: str, run_id: int) -> None:
         """Test-seeding helper: real dispatch happens in the Scheduler
         service against its own Postgres store, not through this

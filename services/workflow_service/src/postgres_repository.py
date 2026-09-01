@@ -127,6 +127,18 @@ class PostgresScheduleRepository:
             row = cur.fetchone()
         return self._schedule_from_row(row) if row else None
 
+    def list_pending(self, workflow_name: str) -> list[Schedule]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
+                       requested_at, dispatched_at, run_id
+                FROM schedules WHERE workflow_name = %s AND dispatched_at IS NULL ORDER BY id DESC
+                """,
+                (workflow_name,),
+            )
+            return [self._schedule_from_row(row) for row in cur.fetchall()]
+
 
 class PostgresWorkflowRunRepository:
     def __init__(self, dsn: str):

@@ -127,6 +127,22 @@ def test_get_schedule_status_unknown_is_404(client):
     assert response.status_code == 404
 
 
+def test_list_pending_schedules(client):
+    client.post("/workflows/feed_ranking/runs")
+
+    response = client.get("/workflows/feed_ranking/schedules")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["status"] == "requested"
+
+
+def test_list_pending_schedules_unknown_workflow_is_404(client):
+    response = client.get("/workflows/does_not_exist/schedules")
+    assert response.status_code == 404
+
+
 def test_get_run(client, workflow_runs):
     workflow_runs.add(_workflow_run(id=1, status=RunStatus.COMPLETED, finished_at=NOW))
 

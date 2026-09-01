@@ -31,45 +31,53 @@ export default function ResourceDetail() {
   }
 
   if (error) return <p className="error">{error}</p>
-  if (versions === null) return <p>Loading...</p>
+  if (versions === null) return <p className="muted">Loading...</p>
 
   return (
-    <div>
+    <div className="page-narrow">
       <p>
-        <Link to="/resources">&larr; Resources</Link>
+        <Link to="/" className="back-link">
+          &larr; Dashboard
+        </Link>
       </p>
       <h1>{name}</h1>
       {versions.length === 0 ? (
-        <p>No versions yet.</p>
+        <p className="muted">No versions yet.</p>
       ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Version</th>
-              <th>Created</th>
-              <th>Test</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...versions].reverse().map((v) => (
-              <tr key={v.id} className={v.version === current ? 'current' : ''}>
-                <td>
-                  {v.version} {v.version === current && <strong>(current)</strong>}
-                </td>
-                <td>{v.created_at}</td>
-                <td>{v.is_test ? 'yes' : ''}</td>
-                <td>
-                  {v.version !== current && (
-                    <button onClick={() => handlePromote(v.version)} disabled={promoting === v.version}>
-                      {promoting === v.version ? 'Promoting...' : 'Promote'}
-                    </button>
-                  )}
-                </td>
+        <div className="card">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>Created</th>
+                <th>Test</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {[...versions].reverse().map((v) => (
+                <tr key={v.id} className={v.version === current ? 'current-row' : ''}>
+                  <td>
+                    {v.version} {v.version === current && <strong>(current)</strong>}
+                  </td>
+                  <td>{v.created_at}</td>
+                  <td>{v.is_test ? 'yes' : ''}</td>
+                  <td>
+                    {v.version !== current && (
+                      <button
+                        className="btn-ghost"
+                        onClick={() => handlePromote(v.version)}
+                        disabled={promoting === v.version}
+                      >
+                        {promoting === v.version ? 'Promoting...' : 'Promote'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

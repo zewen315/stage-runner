@@ -120,6 +120,25 @@ class WorkflowService:
             run_id=run.id,
         )
 
+    def list_pending_schedules(self, workflow_name: str) -> list[ScheduleStatus]:
+        """Every pending schedule is trivially "requested" (dispatched_at
+        is None is exactly what `list_pending` filters on) -- build the
+        status directly instead of a redundant get_schedule_status() per
+        row."""
+        self._require_workflow(workflow_name)
+        return [
+            ScheduleStatus(
+                id=s.id,
+                workflow_name=s.workflow_name,
+                start_from=s.start_from,
+                stop_after=s.stop_after,
+                status=RunStatus.REQUESTED.value,
+                error=None,
+                run_id=None,
+            )
+            for s in self._schedules.list_pending(workflow_name)
+        ]
+
     def list_workflows(self) -> list[str]:
         return sorted(
             d.name

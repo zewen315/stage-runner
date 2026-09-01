@@ -151,6 +151,28 @@ class TestGetScheduleStatus:
             service.get_schedule_status("feed_ranking", 999)
 
 
+class TestListPendingSchedules:
+    def test_lists_undispatched_schedules_most_recent_first(self, service):
+        service.request_run("feed_ranking")
+        second = service.request_run("feed_ranking")
+
+        pending = service.list_pending_schedules("feed_ranking")
+
+        assert [s.id for s in pending] == [second.id, second.id - 1]
+        assert all(s.status == RunStatus.REQUESTED.value for s in pending)
+
+    def test_dispatched_schedules_are_excluded(self, service, schedules, workflow_runs):
+        schedule = service.request_run("feed_ranking")
+        run = _seed_workflow_run(workflow_runs, status=RunStatus.RUNNING)
+        schedules.mark_dispatched(schedule.id, dispatched_at=NOW, run_id=run.id)
+
+        assert service.list_pending_schedules("feed_ranking") == []
+
+    def test_unknown_workflow_raises(self, service):
+        with pytest.raises(WorkflowNotFoundError):
+            service.list_pending_schedules("does_not_exist")
+
+
 class TestGetRun:
     def test_returns_the_run(self, service, workflow_runs):
         seeded = _seed_workflow_run(workflow_runs)

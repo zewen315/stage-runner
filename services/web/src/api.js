@@ -50,6 +50,10 @@ export function getSchedule(workflowName, scheduleId) {
   return request(`/workflows/${workflowName}/schedules/${scheduleId}`)
 }
 
+export function listPendingSchedules(workflowName) {
+  return request(`/workflows/${workflowName}/schedules`)
+}
+
 export function listResources() {
   return request('/resources')
 }

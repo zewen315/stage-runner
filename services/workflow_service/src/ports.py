@@ -31,6 +31,12 @@ class ScheduleRepository(Protocol):
 
     def get(self, workflow_name: str, schedule_id: int) -> Schedule | None: ...
 
+    def list_pending(self, workflow_name: str) -> list[Schedule]:
+        """Schedules not yet dispatched (dispatched_at is None), most
+        recent first. Once dispatched, a schedule's info is superseded by
+        the WorkflowRun it created -- not returned here."""
+        ...
+
 
 class WorkflowRunRepository(Protocol):
     def get(self, workflow_name: str, run_id: int) -> WorkflowRun | None: ...

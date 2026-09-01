@@ -39,57 +39,73 @@ export default function RunDetail() {
   }, [name, runId])
 
   if (error) return <p className="error">{error}</p>
-  if (!run) return <p>Loading...</p>
+  if (!run) return <p className="muted">Loading...</p>
 
   return (
-    <div>
+    <div className="page-narrow">
       <p>
-        <Link to={`/workflows/${name}`}>&larr; {name}</Link>
+        <Link to="/" className="back-link">
+          &larr; Dashboard
+        </Link>
       </p>
-      <h1>
-        Run #{run.id} <span className={`status status-${run.status}`}>{run.status}</span>
-      </h1>
-      <dl className="meta">
-        <dt>Requested</dt>
-        <dd>{run.requested_at}</dd>
-        <dt>Started</dt>
-        <dd>{run.started_at || '—'}</dd>
-        <dt>Finished</dt>
-        <dd>{run.finished_at || '—'}</dd>
-        <dt>Start from</dt>
-        <dd>{run.start_from || '(natural roots)'}</dd>
-        <dt>Stop after</dt>
-        <dd>{run.stop_after || '(run to completion)'}</dd>
-        <dt>Promote</dt>
-        <dd>{String(run.promote)}</dd>
-      </dl>
-      {run.error && <p className="error">{run.error}</p>}
 
-      <h2>Stage runs</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Stage</th>
-            <th>Status</th>
-            <th>Input versions</th>
-            <th>Output version</th>
-            <th>Error</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stageRuns.map((sr) => (
-            <tr key={sr.id}>
-              <td>{sr.stage_name}</td>
-              <td>
-                <span className={`status status-${sr.status}`}>{sr.status}</span>
-              </td>
-              <td>{JSON.stringify(sr.input_versions)}</td>
-              <td>{sr.output_version ?? '—'}</td>
-              <td className="error">{sr.error || ''}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="run-header">
+        <div>
+          <span className="workflow-pill">{run.workflow_name}</span>
+          <h1>Run #{run.id}</h1>
+        </div>
+        <span className={`status status-lg status-${run.status}`}>{run.status}</span>
+      </div>
+
+      <div className="card">
+        <dl className="meta">
+          <dt>Requested</dt>
+          <dd>{formatTime(run.requested_at)}</dd>
+          <dt>Started</dt>
+          <dd>{formatTime(run.started_at) || '—'}</dd>
+          <dt>Finished</dt>
+          <dd>{formatTime(run.finished_at) || '—'}</dd>
+          <dt>Start from</dt>
+          <dd>{run.start_from || '(natural roots)'}</dd>
+          <dt>Stop after</dt>
+          <dd>{run.stop_after || '(run to completion)'}</dd>
+          <dt>Promote</dt>
+          <dd>{String(run.promote)}</dd>
+        </dl>
+        {run.error && <p className="error run-error">{run.error}</p>}
+      </div>
+
+      <h2>Stages</h2>
+      <div className="stage-list">
+        {stageRuns.map((sr) => (
+          <div key={sr.id} className={`stage-card status-border-${sr.status}`}>
+            <div className="stage-card-top">
+              <span className="stage-name">{sr.stage_name}</span>
+              <span className={`status status-${sr.status}`}>{sr.status}</span>
+            </div>
+            <div className="stage-card-meta">
+              <span>in: {formatVersions(sr.input_versions)}</span>
+              <span>out: {sr.output_version ?? '—'}</span>
+            </div>
+            {sr.error && <p className="error">{sr.error}</p>}
+          </div>
+        ))}
+      </div>
     </div>
   )
+}
+
+function formatVersions(versions) {
+  const entries = Object.entries(versions || {})
+  if (entries.length === 0) return '(none)'
+  return entries.map(([name, version]) => `${name} v${version}`).join(', ')
+}
+
+function formatTime(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
 }
