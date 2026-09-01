@@ -7,6 +7,5 @@ __pycache__/
 .env
 *.db
 *.db-journal
-run_output/
 node_modules/
 dist/

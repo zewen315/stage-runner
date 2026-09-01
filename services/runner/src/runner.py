@@ -26,18 +26,10 @@ class Runner:
         self,
         resources: ResourceClient,
         workflow_dir: Path | None = None,
-        output_dir: Path | None = None,
         executor: StageExecutor | None = None,
     ):
         self._resources = resources
         self._workflow_dir = workflow_dir
-        # Import paths resolve against workflow_dir -- checked-in content,
-        # legitimately read-only. Export paths resolve against a *separate*
-        # output_dir -- a run artifact, never inside the workflow's own
-        # (read-only-mounted, in production) directory. Falls back to
-        # workflow_dir only for convenience when nothing else is given
-        # (e.g. quick local/manual testing).
-        self._output_dir = output_dir if output_dir is not None else workflow_dir
         self._executor = executor or InProcessStageExecutor()
 
     def run_stage(
@@ -46,19 +38,16 @@ class Runner:
         input_versions: dict[str, int],
         promote: bool,
         is_test: bool = False,
-    ) -> int | None:
+    ) -> int:
         """Runs one stage. `input_versions` pins specific dependencies to a
         given version instead of "current" -- a fully-resolved map for an
         orchestrated stage (the Scheduler pins every dependency to this
         run's own upstream outputs), a partial or empty one for a
         standalone StageRun (unpinned dependencies fall back to current).
-        Returns the produced resource's version, or None for an export
-        stage (which produces no resource)."""
+        Returns the produced resource's version -- every stage, including
+        a workflow's last one, produces a resource."""
         if stage_def.kind == "import":
             return self._run_import(stage_def, promote, is_test)
-        if stage_def.kind == "export":
-            self._run_export(stage_def, input_versions)
-            return None
         return self._run_stage_fn(stage_def, input_versions, promote, is_test)
 
     @staticmethod
@@ -81,13 +70,6 @@ class Runner:
         if promote:
             self._resources.promote(stage_def.name, version)
         return version
-
-    def _run_export(self, stage_def: StageDef, input_versions: dict[str, int]) -> None:
-        [dep] = stage_def.depends_on
-        _, value = self._resolve_input(dep, input_versions)
-        output_path = self._resolve(stage_def.path, self._output_dir)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(value))
 
     def _run_stage_fn(
         self, stage_def: StageDef, input_versions: dict[str, int], promote: bool, is_test: bool

@@ -66,66 +66,6 @@ def test_stage_records_dependency_versions_used(resources):
     assert resources.dependencies_recorded[("plus_one", 1)] == [("raw", 1)]
 
 
-def test_export_stage_writes_current_value_to_file(tmp_path, resources):
-    resources.upload_version("raw", {"n": 1})
-    resources.promote("raw", 1)
-    output_path = tmp_path / "out.json"
-
-    registry = StageRegistry()
-    registry.export_stage("publish", depends_on="raw", path=str(output_path))
-
-    output_version = Runner(resources).run_stage(registry.get("publish"), {}, promote=True)
-
-    assert output_version is None
-    assert json.loads(output_path.read_text()) == {"n": 1}
-
-
-def test_export_creates_missing_parent_directories(tmp_path, resources):
-    resources.upload_version("raw", {"n": 1})
-    resources.promote("raw", 1)
-    output_path = tmp_path / "nested" / "dir" / "out.json"
-
-    registry = StageRegistry()
-    registry.export_stage("publish", depends_on="raw", path=str(output_path))
-
-    Runner(resources).run_stage(registry.get("publish"), {}, promote=True)
-
-    assert output_path.exists()
-
-
-def test_export_path_resolves_relative_to_output_dir_not_workflow_dir(tmp_path, resources):
-    """workflow_dir is checked-in content (read-only in production); export
-    paths must never resolve against it, even by accident."""
-    resources.upload_version("raw", {"n": 1})
-    resources.promote("raw", 1)
-    workflow_dir = tmp_path / "workflow"
-    output_dir = tmp_path / "output"
-    workflow_dir.mkdir()
-    output_dir.mkdir()
-
-    registry = StageRegistry()
-    registry.export_stage("publish", depends_on="raw", path="out.json")
-
-    Runner(resources, workflow_dir=workflow_dir, output_dir=output_dir).run_stage(
-        registry.get("publish"), {}, promote=True
-    )
-
-    assert (output_dir / "out.json").exists()
-    assert not (workflow_dir / "out.json").exists()
-
-
-def test_output_dir_defaults_to_workflow_dir_when_not_given(tmp_path, resources):
-    resources.upload_version("raw", {"n": 1})
-    resources.promote("raw", 1)
-
-    registry = StageRegistry()
-    registry.export_stage("publish", depends_on="raw", path="out.json")
-
-    Runner(resources, workflow_dir=tmp_path).run_stage(registry.get("publish"), {}, promote=True)
-
-    assert (tmp_path / "out.json").exists()
-
-
 def test_promote_false_uploads_but_does_not_become_current(resources):
     registry = StageRegistry()
 

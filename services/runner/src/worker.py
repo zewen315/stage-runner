@@ -38,13 +38,11 @@ def process_message(
     message: dict,
     *,
     workflows_root: Path,
-    output_root: Path,
     resources: ResourceClient,
     report: Report,
     executor: StageExecutor | None = None,
 ) -> None:
     stage_run_id = message["stage_run_id"]
-    workflow_run_id = message["workflow_run_id"]
     workflow_name = message["workflow_name"]
     stage_name = message["stage_name"]
     input_versions = message["input_versions"]
@@ -55,13 +53,9 @@ def process_message(
 
     try:
         workflow_dir = workflows_root / workflow_name
-        # namespaced by run, not just workflow name -- otherwise every run
-        # of the same workflow (including a standalone/test one) would
-        # overwrite the previous run's export output
-        output_dir = output_root / workflow_name / str(workflow_run_id)
         registry = load_workflow(workflow_dir)
         stage_def = registry.get(stage_name)
-        runner = Runner(resources, workflow_dir=workflow_dir, output_dir=output_dir, executor=executor)
+        runner = Runner(resources, workflow_dir=workflow_dir, executor=executor)
         output_version = runner.run_stage(stage_def, input_versions, promote, is_test=is_test)
     except Exception as exc:  # noqa: BLE001 -- report and move on, don't crash the worker
         report(workflow_name, stage_run_id, "fail", {"error": str(exc)})
@@ -85,7 +79,6 @@ def _http_report(workflow_service_url: str) -> Report:
 def main() -> None:
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
     workflows_root = Path(os.environ.get("WORKFLOWS_ROOT", "/workflows"))
-    output_root = Path(os.environ.get("OUTPUT_ROOT", "/output"))
     resource_store_url = os.environ.get("RESOURCE_STORE_URL", "http://localhost:8000")
     workflow_service_url = os.environ.get("WORKFLOW_SERVICE_URL", "http://localhost:8001")
     stage_executor_image = os.environ.get("STAGE_EXECUTOR_IMAGE")
@@ -133,7 +126,6 @@ def main() -> None:
             process_message(
                 message,
                 workflows_root=workflows_root,
-                output_root=output_root,
                 resources=resources,
                 report=report,
                 executor=executor,

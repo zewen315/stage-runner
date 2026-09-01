@@ -62,7 +62,6 @@ def test_successful_stage_reports_start_then_complete_with_output_version(tmp_pa
     process_message(
         _message(1, "simple_ok", "raw"),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -82,7 +81,6 @@ def test_only_the_named_stage_runs_not_the_whole_workflow(tmp_path):
     process_message(
         _message(1, "simple_one_stage", "raw"),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -102,7 +100,6 @@ def test_pinned_input_version_is_resolved_instead_of_current(tmp_path):
     process_message(
         _message(1, "simple_pinned", "doubled", input_versions={"raw": 1}),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -119,7 +116,6 @@ def test_promote_false_does_not_promote(tmp_path):
     process_message(
         _message(1, "simple_no_promote", "raw", promote=False),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -138,7 +134,6 @@ def test_promote_false_marks_the_version_is_test(tmp_path):
     process_message(
         _message(1, "simple_not_promoted", "raw", promote=False),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -154,7 +149,6 @@ def test_promote_true_does_not_mark_the_version_is_test(tmp_path):
     process_message(
         _message(1, "simple_promoted", "raw", promote=True),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -172,7 +166,6 @@ def test_failing_stage_reports_start_then_fail_with_error(tmp_path):
     process_message(
         _message(2, "simple_boom", "doubled"),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -189,7 +182,6 @@ def test_missing_workflow_reports_fail_without_raising(tmp_path):
     process_message(
         _message(3, "does_not_exist", "raw"),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )
@@ -206,7 +198,6 @@ def test_unknown_stage_name_reports_fail_without_raising(tmp_path):
     process_message(
         _message(4, "simple_unknown_stage", "does_not_exist"),
         workflows_root=tmp_path,
-        output_root=tmp_path / "output",
         resources=resources,
         report=report,
     )

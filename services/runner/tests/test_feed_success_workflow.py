@@ -25,18 +25,14 @@ WORKFLOW_DIR = Path(__file__).resolve().parents[3] / "workflows" / "feed_success
 def test_feed_success_produces_expected_order(mock_sleep, tmp_path):
     registry = load_workflow(WORKFLOW_DIR)
     resources = InMemoryResourceClient()
-    # output_dir is a tmp dir, not WORKFLOW_DIR -- the workflow directory is
-    # checked-in content and shouldn't be written to by a run (matches the
-    # read-only mount used in docker-compose).
-    runner = Runner(resources, workflow_dir=WORKFLOW_DIR, output_dir=tmp_path)
+    runner = Runner(resources, workflow_dir=WORKFLOW_DIR)
 
     done: dict[str, int] = {}
     for stage_def in topological_order(registry.all()):
         input_versions = {dep: done[dep] for dep in stage_def.depends_on}
-        output_version = runner.run_stage(stage_def, input_versions, promote=True)
-        if output_version is not None:
-            done[stage_def.name] = output_version
+        done[stage_def.name] = runner.run_stage(stage_def, input_versions, promote=True)
 
     _, feed = resources.get("rank_feed")
     assert [item["item_id"] for item in feed] == ["post_3", "post_1", "post_2"]
-    assert (tmp_path / "feed.json").exists()
+    _, published = resources.get("publish_feed")
+    assert published == feed

@@ -1,19 +1,17 @@
 """Stage definitions and the registry a workflow module builds by calling
-`stage`, `import_stage`, and `export_stage` on its own StageRegistry.
+`stage` and `import_stage` on its own StageRegistry.
 
-Three kinds, deliberately different shapes:
+Two kinds, deliberately different shapes:
 - "stage": pure Python logic. Takes upstream values as arguments, returns a
   new value. Never touches the filesystem or network -- fully unit-testable
-  with plain values.
+  with plain values. Every stage's output is a resource, including the
+  last one in a workflow -- there's no separate notion of a run's "final
+  output" leaving the system some other way.
 - "import": the only place external input enters the system. No function,
   no dependencies -- just a name and a file path to read.
-- "export": the only place a result leaves the system. No function, no
-  downstream resource -- just a name, the one resource it depends on, and
-  a file path to write.
 
-Keeping import/export generic and function-less means only two small,
-reusable pieces of code ever do file I/O; every "stage" a user writes is
-pure.
+Keeping import generic and function-less means only one small, reusable
+piece of code ever does file I/O; every "stage" a user writes is pure.
 """
 
 from __future__ import annotations
@@ -21,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
-Kind = Literal["stage", "import", "export"]
+Kind = Literal["stage", "import"]
 
 
 @dataclass(frozen=True)
@@ -63,11 +61,6 @@ class StageRegistry:
 
     def import_stage(self, name: str, path: str) -> None:
         self._stages[name] = StageDef(name=name, kind="import", path=path)
-
-    def export_stage(self, name: str, depends_on: str, path: str) -> None:
-        self._stages[name] = StageDef(
-            name=name, kind="export", depends_on=[depends_on], path=path
-        )
 
     def get(self, name: str) -> StageDef:
         return self._stages[name]

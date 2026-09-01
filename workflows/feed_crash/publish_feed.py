@@ -1,8 +1,12 @@
-"""Export stage: publish the ranked feed out of the system. `path` is
-relative to the run's *output* directory, not the workflow's own directory
--- the workflow directory is checked-in, read-only content; this is a
-generated run artifact and lives somewhere else entirely."""
+"""Terminal stage: every workflow ends by producing a resource, this one
+included -- there's no separate "export the result somewhere" step.
+Nothing downstream depends on it, and nothing about its value is
+meaningful beyond being what the run produced; it passes rank_feed
+through unchanged."""
 
 from .registry import registry
 
-registry.export_stage("publish_feed", depends_on="rank_feed", path="feed.json")
+
+@registry.stage("publish_feed", depends_on=["rank_feed"])
+def publish_feed(rank_feed: list[dict]) -> list[dict]:
+    return rank_feed
