@@ -24,6 +24,7 @@ from typing import Callable
 import httpx
 import redis
 from resource_store_client import HttpResourceClient, ResourceClient
+from stage_executor import StageExecutor
 from workflow_loader import load_workflow
 
 from runner import Runner
@@ -40,6 +41,7 @@ def process_message(
     output_root: Path,
     resources: ResourceClient,
     report: Report,
+    executor: StageExecutor | None = None,
 ) -> None:
     stage_run_id = message["stage_run_id"]
     workflow_run_id = message["workflow_run_id"]
@@ -59,7 +61,7 @@ def process_message(
         output_dir = output_root / workflow_name / str(workflow_run_id)
         registry = load_workflow(workflow_dir)
         stage_def = registry.get(stage_name)
-        runner = Runner(resources, workflow_dir=workflow_dir, output_dir=output_dir)
+        runner = Runner(resources, workflow_dir=workflow_dir, output_dir=output_dir, executor=executor)
         output_version = runner.run_stage(stage_def, input_versions, promote, is_test=is_test)
     except Exception as exc:  # noqa: BLE001 -- report and move on, don't crash the worker
         report(workflow_name, stage_run_id, "fail", {"error": str(exc)})
@@ -86,9 +88,24 @@ def main() -> None:
     output_root = Path(os.environ.get("OUTPUT_ROOT", "/output"))
     resource_store_url = os.environ.get("RESOURCE_STORE_URL", "http://localhost:8000")
     workflow_service_url = os.environ.get("WORKFLOW_SERVICE_URL", "http://localhost:8001")
+    stage_executor_image = os.environ.get("STAGE_EXECUTOR_IMAGE")
+    workflows_host_path = os.environ.get("WORKFLOWS_HOST_PATH")
 
     resources = HttpResourceClient(resource_store_url)
     report = _http_report(workflow_service_url)
+
+    executor: StageExecutor | None = None
+    if stage_executor_image and workflows_host_path:
+        from stage_executor import DockerStageExecutor
+
+        executor = DockerStageExecutor(
+            image=stage_executor_image,
+            workflows_host_path=workflows_host_path,
+            workflows_root=str(workflows_root),
+        )
+        print(f"stage execution: containerized (image={stage_executor_image})", flush=True)
+    else:
+        print("stage execution: in-process (STAGE_EXECUTOR_IMAGE/WORKFLOWS_HOST_PATH not set)", flush=True)
 
     client = redis.from_url(redis_url)
     print(f"worker listening on {QUEUE_KEY}...", flush=True)
@@ -119,6 +136,7 @@ def main() -> None:
                 output_root=output_root,
                 resources=resources,
                 report=report,
+                executor=executor,
             )
         except Exception as exc:  # noqa: BLE001 -- one bad message shouldn't kill the worker
             print(f"error processing {message}: {exc}", file=sys.stderr, flush=True)

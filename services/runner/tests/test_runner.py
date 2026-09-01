@@ -167,3 +167,34 @@ def test_is_test_flag_threaded_to_upload(resources):
     version = Runner(resources).run_stage(registry.get("computed"), {}, promote=False, is_test=True)
 
     assert resources.is_test_by_version[("computed", version)] is True
+
+
+def test_stage_execution_goes_through_the_injected_executor(resources):
+    """Confirms the seam is real -- run_stage never calls stage_def.fn
+    directly, it always goes through whatever StageExecutor was given
+    (InProcessStageExecutor by default, which is what every other test
+    here implicitly exercises)."""
+
+    class RecordingExecutor:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, stage_def, inputs, *, workflow_name):
+            self.calls.append((stage_def.name, inputs, workflow_name))
+            return {"n": 42}
+
+    executor = RecordingExecutor()
+    registry = StageRegistry()
+    registry.import_stage("raw", path="unused.json")
+
+    @registry.stage("doubled", depends_on=["raw"])
+    def doubled(raw):
+        raise AssertionError("should never actually run -- the executor is faked")
+
+    resources.upload_version("raw", {"n": 1})
+    resources.promote("raw", 1)
+
+    version = Runner(resources, executor=executor).run_stage(registry.get("doubled"), {}, promote=True)
+
+    assert executor.calls == [("doubled", {"raw": {"n": 1}}, None)]
+    assert resources.get("doubled") == (version, {"n": 42})

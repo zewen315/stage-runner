@@ -105,9 +105,17 @@ services:
       WORKFLOW_SERVICE_URL: http://workflow-service:8000
       WORKFLOWS_ROOT: /workflows
       OUTPUT_ROOT: /output
+      # DooD: each dispatched stage's pure function call runs in its own
+      # sibling container (this same image, see stage_executor.py) rather
+      # than in-process. WORKFLOWS_HOST_PATH is the real host path, not
+      # this container's own /workflows view -- a sibling container's
+      # volume spec is resolved by the host daemon, not by us.
+      STAGE_EXECUTOR_IMAGE: stage-runner-runner
+      WORKFLOWS_HOST_PATH: ${PWD}/workflows
     volumes:
       - ./workflows:/workflows:ro
       - ./run_output:/output
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy

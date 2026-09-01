@@ -3,6 +3,11 @@ results back. The Runner is the only thing that touches the Resource Store
 -- it has no DAG knowledge at all. Dependency-aware ordering lives in the
 Scheduler service now, one process boundary away, dispatching one stage at
 a time; the Runner just executes whatever single stage it's handed.
+
+The actual function call for a "stage"-kind StageDef -- the only kind that
+runs arbitrary, user-authored code -- goes through a `StageExecutor`
+(stage_executor.py), not a direct call, so it can be isolated into a
+container without this module needing to know or care.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from resource_store_client import ResourceClient
+from stage_executor import InProcessStageExecutor, StageExecutor
 from stages import StageDef
 
 
@@ -21,6 +27,7 @@ class Runner:
         resources: ResourceClient,
         workflow_dir: Path | None = None,
         output_dir: Path | None = None,
+        executor: StageExecutor | None = None,
     ):
         self._resources = resources
         self._workflow_dir = workflow_dir
@@ -31,6 +38,7 @@ class Runner:
         # workflow_dir only for convenience when nothing else is given
         # (e.g. quick local/manual testing).
         self._output_dir = output_dir if output_dir is not None else workflow_dir
+        self._executor = executor or InProcessStageExecutor()
 
     def run_stage(
         self,
@@ -92,7 +100,8 @@ class Runner:
             inputs[dep] = value
             dep_versions.append((dep, version))
 
-        result = stage_def.fn(**inputs)
+        workflow_name = self._workflow_dir.name if self._workflow_dir else None
+        result = self._executor.run(stage_def, inputs, workflow_name=workflow_name)
 
         self._resources.create_resource_if_missing(stage_def.name)
         version = self._resources.upload_version(stage_def.name, result, is_test=is_test)
