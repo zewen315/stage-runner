@@ -9,8 +9,19 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U stagerunner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -47,6 +58,53 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+
+  workflow-service:
+    build: ./services/workflow_service
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://stagerunner:stagerunner@postgres:5432/workflow_service
+      REDIS_URL: redis://redis:6379
+      WORKFLOWS_ROOT: /workflows
+    volumes:
+      - ./workflows:/workflows:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      RESOURCE_STORE_URL: http://resource-store:8000
+      WORKFLOW_SERVICE_URL: http://workflow-service:8000
+      WORKFLOWS_ROOT: /workflows
+      OUTPUT_ROOT: /output
+    volumes:
+      - ./workflows:/workflows:ro
+      - ./run_output:/output
+    depends_on:
+      redis:
+        condition: service_healthy
+      resource-store:
+        condition: service_started
+      workflow-service:
+        condition: service_started
+
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - resource-store
+      - workflow-service
 
 volumes:
   postgres_data:

@@ -85,3 +85,32 @@ def test_export_creates_missing_parent_directories(tmp_path, resources):
     Runner(resources).run(registry.get("publish"))
 
     assert output_path.exists()
+
+
+def test_export_path_resolves_relative_to_output_dir_not_workflow_dir(tmp_path, resources):
+    """workflow_dir is checked-in content (read-only in production); export
+    paths must never resolve against it, even by accident."""
+    resources.upload_version("raw", {"n": 1})
+    workflow_dir = tmp_path / "workflow"
+    output_dir = tmp_path / "output"
+    workflow_dir.mkdir()
+    output_dir.mkdir()
+
+    registry = StageRegistry()
+    registry.export_stage("publish", depends_on="raw", path="out.json")
+
+    Runner(resources, workflow_dir=workflow_dir, output_dir=output_dir).run(registry.get("publish"))
+
+    assert (output_dir / "out.json").exists()
+    assert not (workflow_dir / "out.json").exists()
+
+
+def test_output_dir_defaults_to_workflow_dir_when_not_given(tmp_path, resources):
+    resources.upload_version("raw", {"n": 1})
+
+    registry = StageRegistry()
+    registry.export_stage("publish", depends_on="raw", path="out.json")
+
+    Runner(resources, workflow_dir=tmp_path).run(registry.get("publish"))
+
+    assert (tmp_path / "out.json").exists()

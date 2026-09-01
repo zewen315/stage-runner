@@ -17,9 +17,21 @@ from stages import StageDef
 
 
 class Runner:
-    def __init__(self, resources: ResourceClient, workflow_dir: Path | None = None):
+    def __init__(
+        self,
+        resources: ResourceClient,
+        workflow_dir: Path | None = None,
+        output_dir: Path | None = None,
+    ):
         self._resources = resources
         self._workflow_dir = workflow_dir
+        # Import paths resolve against workflow_dir -- checked-in content,
+        # legitimately read-only. Export paths resolve against a *separate*
+        # output_dir -- a run artifact, never inside the workflow's own
+        # (read-only-mounted, in production) directory. Falls back to
+        # workflow_dir only for convenience when nothing else is given
+        # (e.g. quick local/manual testing).
+        self._output_dir = output_dir if output_dir is not None else workflow_dir
 
     def run(self, stage_def: StageDef) -> None:
         if stage_def.kind == "import":
@@ -29,17 +41,16 @@ class Runner:
         else:
             self._run_stage_fn(stage_def)
 
-    def _resolve(self, path: str) -> Path:
-        """Relative import/export paths are resolved against the workflow
-        file's own directory, not the process's cwd -- otherwise a workflow
-        only works when run from one specific directory."""
+    @staticmethod
+    def _resolve(path: str, base: Path | None) -> Path:
         resolved = Path(path)
-        if not resolved.is_absolute() and self._workflow_dir is not None:
-            resolved = self._workflow_dir / resolved
+        if not resolved.is_absolute() and base is not None:
+            resolved = base / resolved
         return resolved
 
     def _run_import(self, stage_def: StageDef) -> None:
-        value = json.loads(self._resolve(stage_def.path).read_text())
+        input_path = self._resolve(stage_def.path, self._workflow_dir)
+        value = json.loads(input_path.read_text())
         self._resources.create_resource_if_missing(stage_def.name)
         version = self._resources.upload_version(stage_def.name, value)
         self._resources.promote(stage_def.name, version)
@@ -47,7 +58,7 @@ class Runner:
     def _run_export(self, stage_def: StageDef) -> None:
         [dep] = stage_def.depends_on
         _, value = self._resources.get(dep)
-        output_path = self._resolve(stage_def.path)
+        output_path = self._resolve(stage_def.path, self._output_dir)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(value))
 

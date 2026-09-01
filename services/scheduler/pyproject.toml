@@ -5,6 +5,7 @@ description = "DAG scheduler for Stage Runner: resolves and executes stage workl
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
+    "redis>=8.1.0",
 ]
 
 [tool.pytest.ini_options]
