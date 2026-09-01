@@ -33,13 +33,24 @@ class StageDef:
     path: str | None = None
 
 
+FailurePolicy = Literal["halt", "fallback"]
+
+
 class StageRegistry:
     """One registry per workflow module -- no hidden global state, so
     multiple workflows (or the same workflow in multiple tests) never
-    collide."""
+    collide.
 
-    def __init__(self) -> None:
+    `on_failure` governs what the Scheduler does when a stage in this
+    workflow fails: "halt" (default) stops the run there, nothing
+    downstream ever dispatches. "fallback" keeps going, treating the
+    failed stage as if it had produced its currently-promoted resource
+    version instead -- degrades to "halt" for a run where no such version
+    exists yet (nothing to fall back to)."""
+
+    def __init__(self, on_failure: FailurePolicy = "halt") -> None:
         self._stages: dict[str, StageDef] = {}
+        self.on_failure = on_failure
 
     def stage(self, name: str, depends_on: list[str] = ()):
         def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:

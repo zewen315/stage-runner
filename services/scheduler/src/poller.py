@@ -16,12 +16,21 @@ Two phases, both re-run every tick:
   reachable-but-undispatched stages remain. A worker never sees more than
   one stage; DAG order and range lives here, not in the Runner.
 
-`poll_once` takes its collaborators (a ScheduleStore, a RunQueue, and a
-registry_provider for loading a workflow's StageRegistry) as parameters
-rather than constructing them, so it's testable with the in-memory fakes in
-memory.py -- no real Postgres, Redis, or filesystem needed for
-tests/test_poller.py. `main` is the thin, untested wiring that builds the
-real versions and runs the poll loop.
+A workflow whose registry declares `on_failure="fallback"` doesn't halt when
+a stage fails -- the Scheduler treats it as if that stage had produced its
+currently-promoted resource version instead (same `input_versions`-pinning
+mechanism `start_from` already uses), and keeps dispatching downstream.
+That's the one thing here that reaches outside this service's own Postgres
+DB and Redis: resolving "currently-promoted" means asking resource_store,
+via the same `ResourceClient` the Runner already uses.
+
+`poll_once` takes its collaborators (a ScheduleStore, a RunQueue, a
+registry_provider for loading a workflow's StageRegistry, and a
+ResourceClient) as parameters rather than constructing them, so it's
+testable with the in-memory fakes in memory.py/lib -- no real Postgres,
+Redis, resource_store, or filesystem needed for tests/test_poller.py.
+`main` is the thin, untested wiring that builds the real versions and runs
+the poll loop.
 """
 
 from __future__ import annotations
@@ -33,6 +42,7 @@ from pathlib import Path
 from typing import Callable
 
 from dag import UnknownDependencyError, reachable_from, topological_order
+from resource_store_client import ResourceClient
 from stages import StageRegistry
 
 from ports import RunQueue, ScheduleStore
@@ -40,9 +50,11 @@ from ports import RunQueue, ScheduleStore
 RegistryProvider = Callable[[str], StageRegistry]
 
 
-def poll_once(store: ScheduleStore, queue: RunQueue, registry_provider: RegistryProvider) -> None:
+def poll_once(
+    store: ScheduleStore, queue: RunQueue, registry_provider: RegistryProvider, resources: ResourceClient
+) -> None:
     _intake(store, queue)
-    _progress(store, queue, registry_provider)
+    _progress(store, queue, registry_provider, resources)
 
 
 def _resolve_promote(promote: bool | None, start_from: str | None, stop_after: str | None) -> bool:
@@ -64,10 +76,13 @@ def _intake(store: ScheduleStore, queue: RunQueue) -> None:
         store.mark_schedule_dispatched(schedule.id, run_id=run_id)
 
 
-def _progress(store: ScheduleStore, queue: RunQueue, registry_provider: RegistryProvider) -> None:
+def _progress(
+    store: ScheduleStore, queue: RunQueue, registry_provider: RegistryProvider, resources: ResourceClient
+) -> None:
     for run in store.active_workflow_runs():
         try:
-            order = topological_order(registry_provider(run.workflow_name).all())
+            registry = registry_provider(run.workflow_name)
+            order = topological_order(registry.all())
         except Exception as exc:  # noqa: BLE001 -- a bad/unloadable DAG fails the run, not the poller
             store.mark_workflow_run_failed(run.id, error=str(exc))
             continue
@@ -107,8 +122,18 @@ def _progress(store: ScheduleStore, queue: RunQueue, registry_provider: Registry
 
         if failed:
             failure = failed[0]
-            store.mark_workflow_run_failed(run.id, error=f"{failure.stage_name}: {failure.error}")
-            continue
+            fell_back = False
+            if registry.on_failure == "fallback":
+                try:
+                    fallback_version, _ = resources.get(failure.stage_name)
+                except Exception:  # noqa: BLE001 -- no current version, store unreachable, etc.
+                    fallback_version = None
+                if fallback_version is not None:
+                    done[failure.stage_name] = fallback_version
+                    fell_back = True
+            if not fell_back:
+                store.mark_workflow_run_failed(run.id, error=f"{failure.stage_name}: {failure.error}")
+                continue
 
         if run.stop_after is not None and run.stop_after in done:
             store.mark_workflow_run_completed(run.id)
@@ -146,15 +171,18 @@ def _progress(store: ScheduleStore, queue: RunQueue, registry_provider: Registry
 def main() -> None:
     database_url = os.environ["DATABASE_URL"]
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+    resource_store_url = os.environ["RESOURCE_STORE_URL"]
     workflows_root = Path(os.environ.get("WORKFLOWS_ROOT", "/workflows"))
     poll_interval = float(os.environ.get("POLL_INTERVAL_SECONDS", "2"))
 
     from postgres_store import PostgresScheduleStore
     from redis_queue import RedisRunQueue
+    from resource_store_client import HttpResourceClient
     from workflow_loader import load_workflow
 
     store = PostgresScheduleStore(database_url)
     queue = RedisRunQueue(redis_url)
+    resources = HttpResourceClient(resource_store_url)
 
     def registry_provider(workflow_name: str) -> StageRegistry:
         return load_workflow(workflows_root / workflow_name)
@@ -162,7 +190,7 @@ def main() -> None:
     print(f"scheduler polling every {poll_interval}s...", flush=True)
     while True:
         try:
-            poll_once(store, queue, registry_provider)
+            poll_once(store, queue, registry_provider, resources)
         except Exception as exc:  # noqa: BLE001 -- one bad tick shouldn't kill the poller
             print(f"poll error: {exc}", file=sys.stderr, flush=True)
         time.sleep(poll_interval)

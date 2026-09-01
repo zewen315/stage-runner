@@ -1,7 +1,15 @@
+from resource_store_client import InMemoryResourceClient
 from stages import StageRegistry
 
 from memory import InMemoryRunQueue, InMemoryScheduleStore
 from poller import poll_once
+
+
+def _poll(store, queue, registry_provider, resources=None):
+    """Most tests don't care about resource_store fallback lookups -- default
+    to an empty fake so call sites don't all need one. TestFallback below
+    passes a pre-seeded one directly to `poll_once`."""
+    poll_once(store, queue, registry_provider, resources or InMemoryResourceClient())
 
 
 def _linear_registry() -> StageRegistry:
@@ -50,7 +58,7 @@ class TestIntake:
         queue = InMemoryRunQueue()
         store.add_schedule("feed_ranking")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert len(store.active_workflow_runs()) == 1
         assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
@@ -64,7 +72,7 @@ class TestIntake:
             "feed_ranking", start_from="doubled", stop_after="doubled", input_versions={"raw": 5}
         )
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert len(queue.enqueued) == 1
         message = queue.enqueued[0]
@@ -79,7 +87,7 @@ class TestPromoteResolution:
         queue = InMemoryRunQueue()
         store.add_schedule("feed_ranking")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert queue.enqueued[0]["promote"] is True
 
@@ -88,7 +96,7 @@ class TestPromoteResolution:
         queue = InMemoryRunQueue()
         store.add_schedule("feed_ranking", stop_after="raw")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert queue.enqueued[0]["promote"] is False
 
@@ -97,7 +105,7 @@ class TestPromoteResolution:
         queue = InMemoryRunQueue()
         store.add_schedule("feed_ranking", promote=False)
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert queue.enqueued[0]["promote"] is False
 
@@ -106,7 +114,7 @@ class TestPromoteResolution:
         queue = InMemoryRunQueue()
         store.add_schedule("feed_ranking", stop_after="raw", promote=True)
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert queue.enqueued[0]["promote"] is True
 
@@ -117,7 +125,7 @@ class TestProgression:
         queue = InMemoryRunQueue()
         run_id = store.add_workflow_run("feed_ranking")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
         assert queue.enqueued[0]["workflow_run_id"] == run_id
@@ -129,7 +137,7 @@ class TestProgression:
         run_id = store.add_workflow_run("feed_ranking")
         store.add_stage_run(run_id, "raw", status="running")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert queue.enqueued == []
 
@@ -139,7 +147,7 @@ class TestProgression:
         run_id = store.add_workflow_run("feed_ranking", status="running")
         store.add_stage_run(run_id, "raw", status="completed", output_version=1)
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert len(queue.enqueued) == 1
         message = queue.enqueued[0]
@@ -155,7 +163,7 @@ class TestProgression:
         store.add_stage_run(run_id, "doubled", status="completed", output_version=2)
         store.add_stage_run(run_id, "tripled", status="completed", output_version=3)
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert store.active_workflow_runs() == []
 
@@ -165,7 +173,7 @@ class TestProgression:
         run_id = store.add_workflow_run("feed_ranking", status="running")
         store.add_stage_run(run_id, "raw", status="failed", error="boom")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert queue.enqueued == []
         assert store.active_workflow_runs() == []
@@ -178,7 +186,7 @@ class TestProgression:
         def broken_provider(workflow_name):
             raise ValueError("no workflow found")
 
-        poll_once(store, queue, broken_provider)
+        _poll(store, queue, broken_provider)
 
         assert queue.enqueued == []
         assert store.active_workflow_runs() == []
@@ -192,7 +200,7 @@ class TestStartFrom:
             "feed_ranking", start_from="doubled", input_versions={"raw": 7}, promote=False
         )
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert [m["stage_name"] for m in queue.enqueued] == ["doubled"]
         assert queue.enqueued[0]["input_versions"] == {"raw": 7}
@@ -206,7 +214,7 @@ class TestStartFrom:
         )
         store.add_stage_run(run_id, "doubled", status="completed", output_version=2)
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert [m["stage_name"] for m in queue.enqueued] == ["tripled"]
 
@@ -215,7 +223,7 @@ class TestStartFrom:
         queue = InMemoryRunQueue()
         store.add_workflow_run("feed_ranking", start_from="doubled", input_versions={})
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert queue.enqueued == []
         assert store.active_workflow_runs() == []
@@ -225,7 +233,7 @@ class TestStartFrom:
         queue = InMemoryRunQueue()
         store.add_workflow_run("feed_ranking", start_from="does_not_exist")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert store.active_workflow_runs() == []
 
@@ -238,7 +246,7 @@ class TestStopAfter:
         store.add_stage_run(run_id, "raw", status="completed", output_version=1)
         store.add_stage_run(run_id, "doubled", status="completed", output_version=2)
 
-        poll_once(store, queue, _registry_provider(_branching_registry()))
+        _poll(store, queue, _registry_provider(_branching_registry()))
 
         assert queue.enqueued == []  # neither tripled nor quadrupled ever dispatched
         assert store.active_workflow_runs() == []  # run reached completed
@@ -248,7 +256,7 @@ class TestStopAfter:
         queue = InMemoryRunQueue()
         store.add_workflow_run("feed_ranking", stop_after="does_not_exist")
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
         assert store.active_workflow_runs() == []
 
@@ -260,6 +268,74 @@ class TestStopAfter:
             "feed_ranking", start_from="doubled", stop_after="raw", input_versions={"raw": 1}
         )
 
-        poll_once(store, queue, _registry_provider(_linear_registry()))
+        _poll(store, queue, _registry_provider(_linear_registry()))
 
+        assert store.active_workflow_runs() == []
+
+
+def _fallback_registry() -> StageRegistry:
+    """Same shape as _linear_registry, but on_failure="fallback"."""
+    registry = StageRegistry(on_failure="fallback")
+    registry.import_stage("raw", path="raw.json")
+
+    @registry.stage("doubled", depends_on=["raw"])
+    def doubled(raw):
+        return raw * 2
+
+    @registry.stage("tripled", depends_on=["doubled"])
+    def tripled(doubled):
+        return doubled * 3
+
+    return registry
+
+
+class TestFallback:
+    def test_falls_back_to_current_version_and_continues(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()
+        version = resources.upload_version("doubled", 99)
+        resources.promote("doubled", version)
+
+        run_id = store.add_workflow_run("feed_ranking", status="running")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        store.add_stage_run(run_id, "doubled", status="failed", error="boom")
+
+        poll_once(store, queue, _registry_provider(_fallback_registry()), resources)
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["tripled"]
+        assert queue.enqueued[0]["input_versions"] == {"doubled": version}
+        assert store.active_workflow_runs()[0].status == "running"
+
+    def test_degrades_to_halt_when_no_fallback_version_exists(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()  # nothing ever promoted for "doubled"
+
+        run_id = store.add_workflow_run("feed_ranking", status="running")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        store.add_stage_run(run_id, "doubled", status="failed", error="boom")
+
+        poll_once(store, queue, _registry_provider(_fallback_registry()), resources)
+
+        assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
+    def test_halt_policy_registry_is_unaffected_by_a_resources_with_a_current_version(self):
+        """Confirms on_failure="halt" (the default) never even looks at
+        resource_store -- a fallback version being available doesn't change
+        anything if the policy doesn't ask for it."""
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()
+        version = resources.upload_version("doubled", 99)
+        resources.promote("doubled", version)
+
+        run_id = store.add_workflow_run("feed_ranking", status="running")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        store.add_stage_run(run_id, "doubled", status="failed", error="boom")
+
+        poll_once(store, queue, _registry_provider(_linear_registry()), resources)
+
+        assert queue.enqueued == []
         assert store.active_workflow_runs() == []

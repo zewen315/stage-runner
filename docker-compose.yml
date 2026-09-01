@@ -82,6 +82,7 @@ services:
     environment:
       DATABASE_URL: postgresql://stagerunner:stagerunner@postgres:5432/workflow_service
       REDIS_URL: redis://redis:6379
+      RESOURCE_STORE_URL: http://resource-store:8000
       WORKFLOWS_ROOT: /workflows
       POLL_INTERVAL_SECONDS: "2"
     volumes:
@@ -91,6 +92,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      resource-store:
+        condition: service_started
 
   runner:
     build:
