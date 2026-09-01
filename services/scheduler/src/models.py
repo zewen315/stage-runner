@@ -7,8 +7,8 @@ from dataclasses import dataclass
 class PendingSchedule:
     id: int
     workflow_name: str
-    scope: str  # 'workflow' | 'stage'
-    stage_name: str | None
+    start_from: str | None
+    stop_after: str | None
     input_versions: dict[str, int] | None
     promote: bool | None
 
@@ -17,6 +17,10 @@ class PendingSchedule:
 class ActiveWorkflowRun:
     id: int
     workflow_name: str
+    start_from: str | None
+    stop_after: str | None
+    input_versions: dict[str, int] | None
+    promote: bool
     status: str
 
 

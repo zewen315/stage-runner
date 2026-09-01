@@ -21,6 +21,10 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     id             BIGSERIAL PRIMARY KEY,
     workflow_name  TEXT NOT NULL,
+    start_from     TEXT,
+    stop_after     TEXT,
+    input_versions JSONB,
+    promote        BOOLEAN NOT NULL,
     status         TEXT NOT NULL,
     requested_at   TIMESTAMPTZ NOT NULL,
     started_at     TIMESTAMPTZ,
@@ -30,7 +34,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE TABLE IF NOT EXISTS stage_runs (
     id              BIGSERIAL PRIMARY KEY,
-    workflow_run_id BIGINT REFERENCES runs(id),
+    workflow_run_id BIGINT NOT NULL REFERENCES runs(id),
     workflow_name   TEXT NOT NULL,
     stage_name      TEXT NOT NULL,
     input_versions  JSONB NOT NULL,
@@ -46,14 +50,13 @@ CREATE TABLE IF NOT EXISTS stage_runs (
 CREATE TABLE IF NOT EXISTS schedules (
     id             BIGSERIAL PRIMARY KEY,
     workflow_name  TEXT NOT NULL,
-    scope          TEXT NOT NULL,
-    stage_name     TEXT,
+    start_from     TEXT,
+    stop_after     TEXT,
     input_versions JSONB,
     promote        BOOLEAN,
     requested_at   TIMESTAMPTZ NOT NULL,
     dispatched_at  TIMESTAMPTZ,
-    run_id         BIGINT REFERENCES runs(id),
-    stage_run_id   BIGINT REFERENCES stage_runs(id)
+    run_id         BIGINT REFERENCES runs(id)
 );
 """
 
@@ -70,42 +73,56 @@ class PostgresScheduleStore:
     def pending_schedules(self) -> list[PendingSchedule]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT id, workflow_name, scope, stage_name, input_versions, promote "
+                "SELECT id, workflow_name, start_from, stop_after, input_versions, promote "
                 "FROM schedules WHERE dispatched_at IS NULL"
             )
             return [
                 PendingSchedule(
                     id=row[0],
                     workflow_name=row[1],
-                    scope=row[2],
-                    stage_name=row[3],
+                    start_from=row[2],
+                    stop_after=row[3],
                     input_versions=row[4],
                     promote=row[5],
                 )
                 for row in cur.fetchall()
             ]
 
-    def mark_schedule_dispatched(
-        self, schedule_id: int, *, run_id: int | None = None, stage_run_id: int | None = None
-    ) -> None:
+    def mark_schedule_dispatched(self, schedule_id: int, *, run_id: int) -> None:
         with self._conn.cursor() as cur:
             cur.execute(
-                "UPDATE schedules SET dispatched_at = now(), run_id = %s, stage_run_id = %s WHERE id = %s",
-                (run_id, stage_run_id, schedule_id),
+                "UPDATE schedules SET dispatched_at = now(), run_id = %s WHERE id = %s",
+                (run_id, schedule_id),
             )
 
-    def create_workflow_run(self, workflow_name: str) -> int:
+    def create_workflow_run(
+        self,
+        workflow_name: str,
+        start_from: str | None,
+        stop_after: str | None,
+        input_versions: dict[str, int] | None,
+        promote: bool,
+    ) -> int:
         with self._conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO runs (workflow_name, status, requested_at) "
-                "VALUES (%s, 'requested', now()) RETURNING id",
-                (workflow_name,),
+                """
+                INSERT INTO runs (workflow_name, start_from, stop_after, input_versions, promote, status, requested_at)
+                VALUES (%s, %s, %s, %s, %s, 'requested', now())
+                RETURNING id
+                """,
+                (
+                    workflow_name,
+                    start_from,
+                    stop_after,
+                    Jsonb(input_versions) if input_versions is not None else None,
+                    promote,
+                ),
             )
             return cur.fetchone()[0]
 
     def create_stage_run(
         self,
-        workflow_run_id: int | None,
+        workflow_run_id: int,
         workflow_name: str,
         stage_name: str,
         input_versions: dict[str, int],
@@ -125,9 +142,21 @@ class PostgresScheduleStore:
 
     def active_workflow_runs(self) -> list[ActiveWorkflowRun]:
         with self._conn.cursor() as cur:
-            cur.execute("SELECT id, workflow_name, status FROM runs WHERE status IN ('requested', 'running')")
+            cur.execute(
+                "SELECT id, workflow_name, start_from, stop_after, input_versions, promote, status "
+                "FROM runs WHERE status IN ('requested', 'running')"
+            )
             return [
-                ActiveWorkflowRun(id=row[0], workflow_name=row[1], status=row[2]) for row in cur.fetchall()
+                ActiveWorkflowRun(
+                    id=row[0],
+                    workflow_name=row[1],
+                    start_from=row[2],
+                    stop_after=row[3],
+                    input_versions=row[4],
+                    promote=row[5],
+                    status=row[6],
+                )
+                for row in cur.fetchall()
             ]
 
     def stage_runs_for_workflow_run(self, run_id: int) -> list[StageRunRecord]:

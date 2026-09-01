@@ -17,12 +17,16 @@ from __future__ import annotations
 import psycopg
 from psycopg.types.json import Jsonb
 
-from models import RunStatus, Schedule, ScheduleScope, StageRun, WorkflowRun
+from models import RunStatus, Schedule, StageRun, WorkflowRun
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     id             BIGSERIAL PRIMARY KEY,
     workflow_name  TEXT NOT NULL,
+    start_from     TEXT,
+    stop_after     TEXT,
+    input_versions JSONB,
+    promote        BOOLEAN NOT NULL,
     status         TEXT NOT NULL,
     requested_at   TIMESTAMPTZ NOT NULL,
     started_at     TIMESTAMPTZ,
@@ -32,7 +36,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE TABLE IF NOT EXISTS stage_runs (
     id              BIGSERIAL PRIMARY KEY,
-    workflow_run_id BIGINT REFERENCES runs(id),
+    workflow_run_id BIGINT NOT NULL REFERENCES runs(id),
     workflow_name   TEXT NOT NULL,
     stage_name      TEXT NOT NULL,
     input_versions  JSONB NOT NULL,
@@ -48,14 +52,13 @@ CREATE TABLE IF NOT EXISTS stage_runs (
 CREATE TABLE IF NOT EXISTS schedules (
     id             BIGSERIAL PRIMARY KEY,
     workflow_name  TEXT NOT NULL,
-    scope          TEXT NOT NULL,
-    stage_name     TEXT,
+    start_from     TEXT,
+    stop_after     TEXT,
     input_versions JSONB,
     promote        BOOLEAN,
     requested_at   TIMESTAMPTZ NOT NULL,
     dispatched_at  TIMESTAMPTZ,
-    run_id         BIGINT REFERENCES runs(id),
-    stage_run_id   BIGINT REFERENCES stage_runs(id)
+    run_id         BIGINT REFERENCES runs(id)
 );
 """
 
@@ -74,21 +77,20 @@ class PostgresScheduleRepository:
         return Schedule(
             id=row[0],
             workflow_name=row[1],
-            scope=ScheduleScope(row[2]),
-            stage_name=row[3],
+            start_from=row[2],
+            stop_after=row[3],
             input_versions=row[4],
             promote=row[5],
             requested_at=row[6].isoformat(),
             dispatched_at=row[7].isoformat() if row[7] else None,
             run_id=row[8],
-            stage_run_id=row[9],
         )
 
     def create(
         self,
         workflow_name: str,
-        scope: ScheduleScope,
-        stage_name: str | None,
+        start_from: str | None,
+        stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool | None,
         requested_at: str,
@@ -96,15 +98,15 @@ class PostgresScheduleRepository:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO schedules (workflow_name, scope, stage_name, input_versions, promote, requested_at)
+                INSERT INTO schedules (workflow_name, start_from, stop_after, input_versions, promote, requested_at)
                 VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, workflow_name, scope, stage_name, input_versions, promote,
-                          requested_at, dispatched_at, run_id, stage_run_id
+                RETURNING id, workflow_name, start_from, stop_after, input_versions, promote,
+                          requested_at, dispatched_at, run_id
                 """,
                 (
                     workflow_name,
-                    scope.value,
-                    stage_name,
+                    start_from,
+                    stop_after,
                     Jsonb(input_versions) if input_versions is not None else None,
                     promote,
                     requested_at,
@@ -116,8 +118,8 @@ class PostgresScheduleRepository:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, workflow_name, scope, stage_name, input_versions, promote,
-                       requested_at, dispatched_at, run_id, stage_run_id
+                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
+                       requested_at, dispatched_at, run_id
                 FROM schedules WHERE id = %s AND workflow_name = %s
                 """,
                 (schedule_id, workflow_name),
@@ -140,18 +142,23 @@ class PostgresWorkflowRunRepository:
         return WorkflowRun(
             id=row[0],
             workflow_name=row[1],
-            status=RunStatus(row[2]),
-            requested_at=row[3].isoformat(),
-            started_at=row[4].isoformat() if row[4] else None,
-            finished_at=row[5].isoformat() if row[5] else None,
-            error=row[6],
+            start_from=row[2],
+            stop_after=row[3],
+            input_versions=row[4],
+            promote=row[5],
+            status=RunStatus(row[6]),
+            requested_at=row[7].isoformat(),
+            started_at=row[8].isoformat() if row[8] else None,
+            finished_at=row[9].isoformat() if row[9] else None,
+            error=row[10],
         )
 
     def get(self, workflow_name: str, run_id: int) -> WorkflowRun | None:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, workflow_name, status, requested_at, started_at, finished_at, error
+                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
+                       status, requested_at, started_at, finished_at, error
                 FROM runs WHERE id = %s AND workflow_name = %s
                 """,
                 (run_id, workflow_name),

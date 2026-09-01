@@ -20,7 +20,7 @@ from errors import (
     StageRunNotFoundError,
     WorkflowNotFoundError,
 )
-from models import RunStatus, Schedule, ScheduleScope, ScheduleStatus, StageRun, WorkflowRun
+from models import RunStatus, Schedule, ScheduleStatus, StageRun, WorkflowRun
 from ports import ScheduleRepository, StageRunRepository, WorkflowRunRepository
 
 
@@ -63,83 +63,61 @@ class WorkflowService:
             raise StageRunNotFoundError(f"no stage run {stage_run_id} for workflow {workflow_name!r}")
         return stage_run
 
-    def request_run(self, workflow_name: str) -> Schedule:
-        """Client-facing: trigger a whole workflow, once. Record intent,
-        return immediately -- the Scheduler picks up undispatched schedules
-        on its own poll cycle and drives the whole DAG from there."""
-        self._require_workflow(workflow_name)
-        return self._schedules.create(
-            workflow_name,
-            ScheduleScope.WORKFLOW,
-            stage_name=None,
-            input_versions=None,
-            promote=None,
-            requested_at=_utcnow(),
-        )
-
-    def request_stage_run(
+    def request_run(
         self,
         workflow_name: str,
-        stage_name: str,
+        start_from: str | None = None,
+        stop_after: str | None = None,
         input_versions: dict[str, int] | None = None,
-        promote: bool = False,
+        promote: bool | None = None,
     ) -> Schedule:
-        """Client-facing: trigger a single stage standalone, once -- e.g.
-        testing a stage against a pinned historical input. Stage-name
-        existence isn't validated here (this service never imports
-        workflow code); an unknown stage fails at dispatch/execution time
-        instead."""
+        """Client-facing: trigger a run, once. `start_from`/`stop_after`
+        (both optional) narrow it to a sub-range of the workflow's DAG --
+        unset both for a full run from the natural roots to completion;
+        set both to the same stage name to run just that one stage.
+        `input_versions` supplies whichever of `start_from`'s dependencies
+        won't be produced within this run (only meaningful when
+        `start_from` is set). `promote` left unset lets the Scheduler
+        apply its default (true only for a full run). Stage-name existence
+        isn't validated here (this service never imports workflow code);
+        an unknown name fails at dispatch time instead. Record intent,
+        return immediately -- the Scheduler picks up undispatched
+        schedules on its own poll cycle."""
         self._require_workflow(workflow_name)
         return self._schedules.create(
             workflow_name,
-            ScheduleScope.STAGE,
-            stage_name=stage_name,
-            input_versions=input_versions or {},
-            promote=promote,
+            start_from,
+            stop_after,
+            input_versions,
+            promote,
             requested_at=_utcnow(),
         )
 
     def get_schedule_status(self, workflow_name: str, schedule_id: int) -> ScheduleStatus:
-        """Client-facing polling target: proxies the status of whatever
-        this schedule dispatched to, regardless of scope, so callers only
-        ever need to poll one endpoint."""
+        """Client-facing polling target: proxies the status of the
+        WorkflowRun this schedule dispatched to, once it has."""
         schedule = self._require_schedule(workflow_name, schedule_id)
 
         if schedule.dispatched_at is None:
             return ScheduleStatus(
                 id=schedule.id,
                 workflow_name=schedule.workflow_name,
-                scope=schedule.scope,
-                stage_name=schedule.stage_name,
+                start_from=schedule.start_from,
+                stop_after=schedule.stop_after,
                 status=RunStatus.REQUESTED.value,
                 error=None,
                 run_id=None,
-                stage_run_id=None,
             )
 
-        if schedule.scope == ScheduleScope.WORKFLOW:
-            run = self._require_run(workflow_name, schedule.run_id)
-            return ScheduleStatus(
-                id=schedule.id,
-                workflow_name=schedule.workflow_name,
-                scope=schedule.scope,
-                stage_name=schedule.stage_name,
-                status=run.status.value,
-                error=run.error,
-                run_id=run.id,
-                stage_run_id=None,
-            )
-
-        stage_run = self._require_stage_run(workflow_name, schedule.stage_run_id)
+        run = self._require_run(workflow_name, schedule.run_id)
         return ScheduleStatus(
             id=schedule.id,
             workflow_name=schedule.workflow_name,
-            scope=schedule.scope,
-            stage_name=schedule.stage_name,
-            status=stage_run.status.value,
-            error=stage_run.error,
-            run_id=None,
-            stage_run_id=stage_run.id,
+            start_from=schedule.start_from,
+            stop_after=schedule.stop_after,
+            status=run.status.value,
+            error=run.error,
+            run_id=run.id,
         )
 
     def get_run(self, workflow_name: str, run_id: int) -> WorkflowRun:

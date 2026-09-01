@@ -92,12 +92,11 @@ class ScheduleResponse(BaseModel):
 
     id: int
     workflow_name: str
-    scope: str
-    stage_name: str | None
+    start_from: str | None
+    stop_after: str | None
     status: str
     error: str | None
     run_id: int | None
-    stage_run_id: int | None
 
 
 class WorkflowRunResponse(BaseModel):
@@ -105,6 +104,9 @@ class WorkflowRunResponse(BaseModel):
 
     id: int
     workflow_name: str
+    start_from: str | None
+    stop_after: str | None
+    promote: bool
     status: str
     requested_at: str
     started_at: str | None
@@ -116,7 +118,7 @@ class StageRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    workflow_run_id: int | None
+    workflow_run_id: int
     workflow_name: str
     stage_name: str
     input_versions: dict[str, int]
@@ -129,9 +131,11 @@ class StageRunResponse(BaseModel):
     error: str | None
 
 
-class RequestStageRunRequest(BaseModel):
-    input_versions: dict[str, int] = {}
-    promote: bool = False
+class RequestRunRequest(BaseModel):
+    start_from: str | None = None
+    stop_after: str | None = None
+    input_versions: dict[str, int] | None = None
+    promote: bool | None = None
 
 
 class CompleteStageRunRequest(BaseModel):
@@ -143,19 +147,13 @@ class FailStageRunRequest(BaseModel):
 
 
 @app.post("/workflows/{name}/runs", response_model=ScheduleResponse, status_code=202)
-def request_run(name: str, service: WorkflowService = Depends(get_service)):
-    schedule = service.request_run(name)
-    return service.get_schedule_status(name, schedule.id)
-
-
-@app.post("/workflows/{name}/stages/{stage}/runs", response_model=ScheduleResponse, status_code=202)
-def request_stage_run(
+def request_run(
     name: str,
-    stage: str,
-    body: RequestStageRunRequest,
+    body: RequestRunRequest | None = None,
     service: WorkflowService = Depends(get_service),
 ):
-    schedule = service.request_stage_run(name, stage, body.input_versions, body.promote)
+    body = body or RequestRunRequest()
+    schedule = service.request_run(name, body.start_from, body.stop_after, body.input_versions, body.promote)
     return service.get_schedule_status(name, schedule.id)
 
 

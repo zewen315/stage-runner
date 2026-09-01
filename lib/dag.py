@@ -43,3 +43,24 @@ def topological_order(stages: list[StageDef]) -> list[StageDef]:
         visit(stage.name)
 
     return ordered
+
+
+def reachable_from(stages: list[StageDef], start_from: str) -> set[str]:
+    """Every stage that *is* `start_from` or transitively depends on it --
+    i.e. the sub-DAG a run should execute when told to start partway
+    through instead of at the natural roots. Assumes `stages` is acyclic
+    (call `topological_order` first, which validates that)."""
+    by_name = {s.name: s for s in stages}
+    if start_from not in by_name:
+        raise UnknownDependencyError(f"unknown start_from stage {start_from!r}")
+
+    memo: dict[str, bool] = {}
+
+    def depends_on_start(name: str) -> bool:
+        if name not in memo:
+            memo[name] = name == start_from or any(
+                depends_on_start(dep) for dep in by_name[name].depends_on
+            )
+        return memo[name]
+
+    return {name for name in by_name if depends_on_start(name)}

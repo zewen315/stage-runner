@@ -21,7 +21,7 @@ class RedisRunQueue:
     def enqueue_stage_run(
         self,
         stage_run_id: int,
-        workflow_run_id: int | None,
+        workflow_run_id: int,
         workflow_name: str,
         stage_name: str,
         input_versions: dict[str, int],

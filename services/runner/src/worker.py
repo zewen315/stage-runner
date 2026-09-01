@@ -46,7 +46,7 @@ def process_message(
     stage_name = message["stage_name"]
     input_versions = message["input_versions"]
     promote = message["promote"]
-    is_test = message["workflow_run_id"] is None
+    is_test = not promote
 
     report(workflow_name, stage_run_id, "start", {})
 

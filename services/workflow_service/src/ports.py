@@ -15,15 +15,15 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from models import Schedule, ScheduleScope, StageRun, WorkflowRun
+from models import Schedule, StageRun, WorkflowRun
 
 
 class ScheduleRepository(Protocol):
     def create(
         self,
         workflow_name: str,
-        scope: ScheduleScope,
-        stage_name: str | None,
+        start_from: str | None,
+        stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool | None,
         requested_at: str,

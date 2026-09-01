@@ -20,55 +20,95 @@ def _linear_registry() -> StageRegistry:
     return registry
 
 
+def _branching_registry() -> StageRegistry:
+    """raw -> doubled -> {tripled, quadrupled} (both depend on doubled)."""
+    registry = StageRegistry()
+    registry.import_stage("raw", path="raw.json")
+
+    @registry.stage("doubled", depends_on=["raw"])
+    def doubled(raw):
+        return raw * 2
+
+    @registry.stage("tripled", depends_on=["doubled"])
+    def tripled(doubled):
+        return doubled * 3
+
+    @registry.stage("quadrupled", depends_on=["doubled"])
+    def quadrupled(doubled):
+        return doubled * 4
+
+    return registry
+
+
 def _registry_provider(registry: StageRegistry):
     return lambda workflow_name: registry
 
 
-class TestIntakeStandalone:
-    def test_stage_scoped_schedule_dispatches_immediately_without_a_workflow_run(self):
+class TestIntake:
+    def test_full_run_schedule_creates_a_run_and_dispatches_the_root(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_schedule("feed_ranking")
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert len(store.active_workflow_runs()) == 1
+        assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
+        assert queue.enqueued[0]["workflow_run_id"] == store.active_workflow_runs()[0].id
+        assert queue.enqueued[0]["promote"] is True
+
+    def test_single_stage_schedule_creates_a_run_and_dispatches_immediately(self):
         store = InMemoryScheduleStore()
         queue = InMemoryRunQueue()
         store.add_schedule(
-            "feed_ranking", "stage", stage_name="score_items",
-            input_versions={"aggregate_signals": 3}, promote=True,
+            "feed_ranking", start_from="doubled", stop_after="doubled", input_versions={"raw": 5}
         )
 
         poll_once(store, queue, _registry_provider(_linear_registry()))
 
         assert len(queue.enqueued) == 1
         message = queue.enqueued[0]
-        assert message["workflow_run_id"] is None
-        assert message["stage_name"] == "score_items"
-        assert message["input_versions"] == {"aggregate_signals": 3}
-        assert message["promote"] is True
-        assert store.active_workflow_runs() == []
+        assert message["stage_name"] == "doubled"
+        assert message["input_versions"] == {"raw": 5}
+        assert message["promote"] is False  # partial-run default
 
-    def test_stage_scoped_schedule_defaults_input_versions_and_promote(self):
+
+class TestPromoteResolution:
+    def test_full_run_defaults_promote_true(self):
         store = InMemoryScheduleStore()
         queue = InMemoryRunQueue()
-        store.add_schedule("feed_ranking", "stage", stage_name="raw")
+        store.add_schedule("feed_ranking")
 
         poll_once(store, queue, _registry_provider(_linear_registry()))
 
-        message = queue.enqueued[0]
-        assert message["input_versions"] == {}
-        assert message["promote"] is False
+        assert queue.enqueued[0]["promote"] is True
 
-
-class TestIntakeWorkflow:
-    def test_workflow_scoped_schedule_creates_a_run_not_a_queue_message(self):
+    def test_partial_run_defaults_promote_false(self):
         store = InMemoryScheduleStore()
         queue = InMemoryRunQueue()
-        store.add_schedule("feed_ranking", "workflow")
+        store.add_schedule("feed_ranking", stop_after="raw")
 
         poll_once(store, queue, _registry_provider(_linear_registry()))
 
-        # a WorkflowRun row exists, but nothing about *it* is ever queued --
-        # only its ready root stage gets dispatched, by the same tick's
-        # progression pass (covered in detail by TestProgression)
-        assert len(store.active_workflow_runs()) == 1
-        assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
-        assert queue.enqueued[0]["workflow_run_id"] == store.active_workflow_runs()[0].id
+        assert queue.enqueued[0]["promote"] is False
+
+    def test_explicit_promote_overrides_default_for_a_full_run(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_schedule("feed_ranking", promote=False)
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert queue.enqueued[0]["promote"] is False
+
+    def test_explicit_promote_overrides_default_for_a_partial_run(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_schedule("feed_ranking", stop_after="raw", promote=True)
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert queue.enqueued[0]["promote"] is True
 
 
 class TestProgression:
@@ -141,4 +181,85 @@ class TestProgression:
         poll_once(store, queue, broken_provider)
 
         assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
+
+class TestStartFrom:
+    def test_skips_upstream_stages_and_seeds_from_input_versions(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_workflow_run(
+            "feed_ranking", start_from="doubled", input_versions={"raw": 7}, promote=False
+        )
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["doubled"]
+        assert queue.enqueued[0]["input_versions"] == {"raw": 7}
+        assert queue.enqueued[0]["promote"] is False
+
+    def test_resume_run_continues_through_to_completion(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        run_id = store.add_workflow_run(
+            "feed_ranking", start_from="doubled", input_versions={"raw": 1}, promote=True, status="running"
+        )
+        store.add_stage_run(run_id, "doubled", status="completed", output_version=2)
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["tripled"]
+
+    def test_missing_input_versions_for_start_from_deps_fails_the_run(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_workflow_run("feed_ranking", start_from="doubled", input_versions={})
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
+    def test_unknown_start_from_fails_the_run(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_workflow_run("feed_ranking", start_from="does_not_exist")
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert store.active_workflow_runs() == []
+
+
+class TestStopAfter:
+    def test_halts_before_downstream_stages_dispatch(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        run_id = store.add_workflow_run("feed_ranking", stop_after="doubled", status="running")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        store.add_stage_run(run_id, "doubled", status="completed", output_version=2)
+
+        poll_once(store, queue, _registry_provider(_branching_registry()))
+
+        assert queue.enqueued == []  # neither tripled nor quadrupled ever dispatched
+        assert store.active_workflow_runs() == []  # run reached completed
+
+    def test_unknown_stop_after_fails_the_run(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_workflow_run("feed_ranking", stop_after="does_not_exist")
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
+        assert store.active_workflow_runs() == []
+
+    def test_not_reachable_from_start_from_fails_the_run(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        # "raw" is upstream of "doubled", not reachable from it
+        store.add_workflow_run(
+            "feed_ranking", start_from="doubled", stop_after="raw", input_versions={"raw": 1}
+        )
+
+        poll_once(store, queue, _registry_provider(_linear_registry()))
+
         assert store.active_workflow_runs() == []

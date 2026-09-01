@@ -4,7 +4,7 @@ import pytest
 
 from errors import RunNotFoundError, ScheduleNotFoundError, StageRunNotFoundError, WorkflowNotFoundError
 from memory import InMemoryScheduleRepository, InMemoryStageRunRepository, InMemoryWorkflowRunRepository
-from models import RunStatus, ScheduleScope, StageRun, WorkflowRun
+from models import RunStatus, StageRun, WorkflowRun
 from service import WorkflowService
 
 NOW = datetime.now(timezone.utc).isoformat()
@@ -36,10 +36,16 @@ def service(schedules, workflow_runs, stage_runs, workflows_root):
     return WorkflowService(schedules, workflow_runs, stage_runs, workflows_root)
 
 
-def _seed_workflow_run(workflow_runs, *, id=1, status=RunStatus.REQUESTED, error=None):
+def _seed_workflow_run(
+    workflow_runs, *, id=1, start_from=None, stop_after=None, promote=True, status=RunStatus.REQUESTED, error=None
+):
     run = WorkflowRun(
         id=id,
         workflow_name="feed_ranking",
+        start_from=start_from,
+        stop_after=stop_after,
+        input_versions=None,
+        promote=promote,
         status=status,
         requested_at=NOW,
         started_at=None,
@@ -50,14 +56,14 @@ def _seed_workflow_run(workflow_runs, *, id=1, status=RunStatus.REQUESTED, error
     return run
 
 
-def _seed_stage_run(stage_runs, *, id=1, workflow_run_id=None, status=RunStatus.REQUESTED, error=None):
+def _seed_stage_run(stage_runs, *, id=1, workflow_run_id=1, status=RunStatus.REQUESTED, error=None):
     stage_run = StageRun(
         id=id,
         workflow_run_id=workflow_run_id,
         workflow_name="feed_ranking",
         stage_name="score_items",
         input_versions={},
-        promote=workflow_run_id is not None,
+        promote=True,
         output_version=None,
         status=status,
         requested_at=NOW,
@@ -70,40 +76,45 @@ def _seed_stage_run(stage_runs, *, id=1, workflow_run_id=None, status=RunStatus.
 
 
 class TestRequestRun:
-    def test_creates_a_workflow_scoped_schedule(self, service):
+    def test_full_run_has_no_start_from_or_stop_after(self, service):
         schedule = service.request_run("feed_ranking")
 
         assert schedule.workflow_name == "feed_ranking"
-        assert schedule.scope == ScheduleScope.WORKFLOW
-        assert schedule.stage_name is None
+        assert schedule.start_from is None
+        assert schedule.stop_after is None
         assert schedule.dispatched_at is None
+
+    def test_single_stage_run_sets_start_from_and_stop_after_to_the_same_name(self, service):
+        schedule = service.request_run(
+            "feed_ranking",
+            start_from="score_items",
+            stop_after="score_items",
+            input_versions={"aggregate_signals": 3},
+            promote=True,
+        )
+
+        assert schedule.start_from == "score_items"
+        assert schedule.stop_after == "score_items"
+        assert schedule.input_versions == {"aggregate_signals": 3}
+        assert schedule.promote is True
+
+    def test_resume_run_sets_only_start_from(self, service):
+        schedule = service.request_run("feed_ranking", start_from="score_items")
+
+        assert schedule.start_from == "score_items"
+        assert schedule.stop_after is None
+
+    def test_promote_left_unset_is_passed_through_as_none(self, service):
+        """workflow_service just persists whatever promote it's given --
+        resolving the None-means-default-by-run-shape rule is the
+        Scheduler's job, not this service's."""
+        schedule = service.request_run("feed_ranking", start_from="score_items")
+
+        assert schedule.promote is None
 
     def test_unknown_workflow_raises(self, service):
         with pytest.raises(WorkflowNotFoundError):
             service.request_run("does_not_exist")
-
-
-class TestRequestStageRun:
-    def test_creates_a_stage_scoped_schedule(self, service):
-        schedule = service.request_stage_run(
-            "feed_ranking", "score_items", input_versions={"aggregate_signals": 3}, promote=True
-        )
-
-        assert schedule.scope == ScheduleScope.STAGE
-        assert schedule.stage_name == "score_items"
-        assert schedule.input_versions == {"aggregate_signals": 3}
-        assert schedule.promote is True
-        assert schedule.dispatched_at is None
-
-    def test_defaults_input_versions_and_promote(self, service):
-        schedule = service.request_stage_run("feed_ranking", "score_items")
-
-        assert schedule.input_versions == {}
-        assert schedule.promote is False
-
-    def test_unknown_workflow_raises(self, service):
-        with pytest.raises(WorkflowNotFoundError):
-            service.request_stage_run("does_not_exist", "score_items")
 
 
 class TestGetScheduleStatus:
@@ -114,9 +125,8 @@ class TestGetScheduleStatus:
 
         assert status.status == RunStatus.REQUESTED.value
         assert status.run_id is None
-        assert status.stage_run_id is None
 
-    def test_dispatched_workflow_schedule_proxies_run_status(self, service, schedules, workflow_runs):
+    def test_dispatched_schedule_proxies_run_status(self, service, schedules, workflow_runs):
         schedule = service.request_run("feed_ranking")
         run = _seed_workflow_run(workflow_runs, status=RunStatus.RUNNING)
         schedules.mark_dispatched(schedule.id, dispatched_at=NOW, run_id=run.id)
@@ -125,19 +135,16 @@ class TestGetScheduleStatus:
 
         assert status.status == RunStatus.RUNNING.value
         assert status.run_id == run.id
-        assert status.stage_run_id is None
 
-    def test_dispatched_stage_schedule_proxies_stage_run_status(self, service, schedules, stage_runs):
-        schedule = service.request_stage_run("feed_ranking", "score_items")
-        stage_run = _seed_stage_run(stage_runs, status=RunStatus.FAILED, error="boom")
-        schedules.mark_dispatched(schedule.id, dispatched_at=NOW, stage_run_id=stage_run.id)
+    def test_dispatched_schedule_proxies_failed_run_error(self, service, schedules, workflow_runs):
+        schedule = service.request_run("feed_ranking")
+        run = _seed_workflow_run(workflow_runs, status=RunStatus.FAILED, error="boom")
+        schedules.mark_dispatched(schedule.id, dispatched_at=NOW, run_id=run.id)
 
         status = service.get_schedule_status("feed_ranking", schedule.id)
 
         assert status.status == RunStatus.FAILED.value
         assert status.error == "boom"
-        assert status.stage_run_id == stage_run.id
-        assert status.run_id is None
 
     def test_unknown_schedule_raises(self, service):
         with pytest.raises(ScheduleNotFoundError):
@@ -157,9 +164,10 @@ class TestGetRun:
 
 class TestListStageRunsForRun:
     def test_lists_only_stage_runs_for_that_workflow_run(self, service, workflow_runs, stage_runs):
-        run = _seed_workflow_run(workflow_runs)
-        mine = _seed_stage_run(stage_runs, id=1, workflow_run_id=run.id)
-        _seed_stage_run(stage_runs, id=2, workflow_run_id=None)  # standalone, unrelated
+        run = _seed_workflow_run(workflow_runs, id=1)
+        _seed_workflow_run(workflow_runs, id=2)
+        mine = _seed_stage_run(stage_runs, id=1, workflow_run_id=1)
+        _seed_stage_run(stage_runs, id=2, workflow_run_id=2)  # a different run, unrelated
 
         assert service.list_stage_runs_for_run("feed_ranking", run.id) == [mine]
 

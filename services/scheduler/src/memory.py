@@ -19,16 +19,16 @@ class InMemoryScheduleStore:
     def add_schedule(
         self,
         workflow_name: str,
-        scope: str,
-        stage_name: str | None = None,
+        start_from: str | None = None,
+        stop_after: str | None = None,
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
     ) -> int:
         schedule_id = self._next_schedule_id
         self._schedules[schedule_id] = {
             "workflow_name": workflow_name,
-            "scope": scope,
-            "stage_name": stage_name,
+            "start_from": start_from,
+            "stop_after": stop_after,
             "input_versions": input_versions,
             "promote": promote,
             "dispatched": False,
@@ -36,15 +36,31 @@ class InMemoryScheduleStore:
         self._next_schedule_id += 1
         return schedule_id
 
-    def add_workflow_run(self, workflow_name: str, status: str = "requested") -> int:
+    def add_workflow_run(
+        self,
+        workflow_name: str,
+        start_from: str | None = None,
+        stop_after: str | None = None,
+        input_versions: dict[str, int] | None = None,
+        promote: bool = True,
+        status: str = "requested",
+    ) -> int:
         run_id = self._next_run_id
-        self._runs[run_id] = {"workflow_name": workflow_name, "status": status, "error": None}
+        self._runs[run_id] = {
+            "workflow_name": workflow_name,
+            "start_from": start_from,
+            "stop_after": stop_after,
+            "input_versions": input_versions,
+            "promote": promote,
+            "status": status,
+            "error": None,
+        }
         self._next_run_id += 1
         return run_id
 
     def add_stage_run(
         self,
-        workflow_run_id: int | None,
+        workflow_run_id: int,
         stage_name: str,
         status: str = "requested",
         output_version: int | None = None,
@@ -77,8 +93,8 @@ class InMemoryScheduleStore:
             PendingSchedule(
                 id=sid,
                 workflow_name=s["workflow_name"],
-                scope=s["scope"],
-                stage_name=s["stage_name"],
+                start_from=s["start_from"],
+                stop_after=s["stop_after"],
                 input_versions=s["input_versions"],
                 promote=s["promote"],
             )
@@ -86,19 +102,25 @@ class InMemoryScheduleStore:
             if not s["dispatched"]
         ]
 
-    def mark_schedule_dispatched(
-        self, schedule_id: int, *, run_id: int | None = None, stage_run_id: int | None = None
-    ) -> None:
+    def mark_schedule_dispatched(self, schedule_id: int, *, run_id: int) -> None:
         self._schedules[schedule_id]["dispatched"] = True
         self._schedules[schedule_id]["run_id"] = run_id
-        self._schedules[schedule_id]["stage_run_id"] = stage_run_id
 
-    def create_workflow_run(self, workflow_name: str) -> int:
-        return self.add_workflow_run(workflow_name)
+    def create_workflow_run(
+        self,
+        workflow_name: str,
+        start_from: str | None,
+        stop_after: str | None,
+        input_versions: dict[str, int] | None,
+        promote: bool,
+    ) -> int:
+        return self.add_workflow_run(
+            workflow_name, start_from, stop_after, input_versions, promote
+        )
 
     def create_stage_run(
         self,
-        workflow_run_id: int | None,
+        workflow_run_id: int,
         workflow_name: str,
         stage_name: str,
         input_versions: dict[str, int],
@@ -108,7 +130,15 @@ class InMemoryScheduleStore:
 
     def active_workflow_runs(self) -> list[ActiveWorkflowRun]:
         return [
-            ActiveWorkflowRun(id=rid, workflow_name=r["workflow_name"], status=r["status"])
+            ActiveWorkflowRun(
+                id=rid,
+                workflow_name=r["workflow_name"],
+                start_from=r["start_from"],
+                stop_after=r["stop_after"],
+                input_versions=r["input_versions"],
+                promote=r["promote"],
+                status=r["status"],
+            )
             for rid, r in self._runs.items()
             if r["status"] in ("requested", "running")
         ]
@@ -143,7 +173,7 @@ class InMemoryRunQueue:
     def enqueue_stage_run(
         self,
         stage_run_id: int,
-        workflow_run_id: int | None,
+        workflow_run_id: int,
         workflow_name: str,
         stage_name: str,
         input_versions: dict[str, int],

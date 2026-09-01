@@ -40,13 +40,49 @@ def client(tmp_path, schedules, workflow_runs, stage_runs):
     app.dependency_overrides.clear()
 
 
+def _workflow_run(**overrides):
+    defaults = dict(
+        id=1,
+        workflow_name="feed_ranking",
+        start_from=None,
+        stop_after=None,
+        input_versions=None,
+        promote=True,
+        status=RunStatus.RUNNING,
+        requested_at=NOW,
+        started_at=NOW,
+        finished_at=None,
+        error=None,
+    )
+    return WorkflowRun(**{**defaults, **overrides})
+
+
+def _stage_run(**overrides):
+    defaults = dict(
+        id=1,
+        workflow_run_id=1,
+        workflow_name="feed_ranking",
+        stage_name="score_items",
+        input_versions={},
+        promote=False,
+        output_version=None,
+        status=RunStatus.REQUESTED,
+        requested_at=NOW,
+        started_at=None,
+        finished_at=None,
+        error=None,
+    )
+    return StageRun(**{**defaults, **overrides})
+
+
 def test_request_run_returns_202_with_requested_status(client):
     response = client.post("/workflows/feed_ranking/runs")
 
     assert response.status_code == 202
     body = response.json()
     assert body["workflow_name"] == "feed_ranking"
-    assert body["scope"] == "workflow"
+    assert body["start_from"] is None
+    assert body["stop_after"] is None
     assert body["status"] == "requested"
 
 
@@ -55,32 +91,27 @@ def test_request_run_unknown_workflow_is_404(client):
     assert response.status_code == 404
 
 
-def test_request_stage_run_returns_202(client):
+def test_request_run_with_start_from_and_stop_after_returns_202(client):
     response = client.post(
-        "/workflows/feed_ranking/stages/score_items/runs",
-        json={"input_versions": {"aggregate_signals": 2}, "promote": True},
+        "/workflows/feed_ranking/runs",
+        json={
+            "start_from": "score_items",
+            "stop_after": "score_items",
+            "input_versions": {"aggregate_signals": 2},
+            "promote": True,
+        },
     )
 
     assert response.status_code == 202
     body = response.json()
-    assert body["scope"] == "stage"
-    assert body["stage_name"] == "score_items"
+    assert body["start_from"] == "score_items"
+    assert body["stop_after"] == "score_items"
     assert body["status"] == "requested"
 
 
 def test_get_schedule_status_proxies_dispatched_run(client, schedules, workflow_runs):
     schedule = client.post("/workflows/feed_ranking/runs").json()
-    workflow_runs.add(
-        WorkflowRun(
-            id=42,
-            workflow_name="feed_ranking",
-            status=RunStatus.RUNNING,
-            requested_at=NOW,
-            started_at=NOW,
-            finished_at=None,
-            error=None,
-        )
-    )
+    workflow_runs.add(_workflow_run(id=42, status=RunStatus.RUNNING))
     schedules.mark_dispatched(schedule["id"], dispatched_at=NOW, run_id=42)
 
     response = client.get(f"/workflows/feed_ranking/schedules/{schedule['id']}")
@@ -97,17 +128,7 @@ def test_get_schedule_status_unknown_is_404(client):
 
 
 def test_get_run(client, workflow_runs):
-    workflow_runs.add(
-        WorkflowRun(
-            id=1,
-            workflow_name="feed_ranking",
-            status=RunStatus.COMPLETED,
-            requested_at=NOW,
-            started_at=NOW,
-            finished_at=NOW,
-            error=None,
-        )
-    )
+    workflow_runs.add(_workflow_run(id=1, status=RunStatus.COMPLETED, finished_at=NOW))
 
     response = client.get("/workflows/feed_ranking/runs/1")
 
@@ -121,33 +142,8 @@ def test_get_run_unknown_is_404(client):
 
 
 def test_list_stage_runs_for_run(client, workflow_runs, stage_runs):
-    workflow_runs.add(
-        WorkflowRun(
-            id=1,
-            workflow_name="feed_ranking",
-            status=RunStatus.RUNNING,
-            requested_at=NOW,
-            started_at=NOW,
-            finished_at=None,
-            error=None,
-        )
-    )
-    stage_runs.add(
-        StageRun(
-            id=7,
-            workflow_run_id=1,
-            workflow_name="feed_ranking",
-            stage_name="raw_events",
-            input_versions={},
-            promote=True,
-            output_version=None,
-            status=RunStatus.RUNNING,
-            requested_at=NOW,
-            started_at=NOW,
-            finished_at=None,
-            error=None,
-        )
-    )
+    workflow_runs.add(_workflow_run(id=1))
+    stage_runs.add(_stage_run(id=7, workflow_run_id=1, stage_name="raw_events", status=RunStatus.RUNNING))
 
     response = client.get("/workflows/feed_ranking/runs/1/stage-runs")
 
@@ -158,22 +154,7 @@ def test_list_stage_runs_for_run(client, workflow_runs, stage_runs):
 
 
 def test_full_stage_run_lifecycle_via_worker_endpoints(client, stage_runs):
-    stage_runs.add(
-        StageRun(
-            id=1,
-            workflow_run_id=None,
-            workflow_name="feed_ranking",
-            stage_name="score_items",
-            input_versions={},
-            promote=False,
-            output_version=None,
-            status=RunStatus.REQUESTED,
-            requested_at=NOW,
-            started_at=None,
-            finished_at=None,
-            error=None,
-        )
-    )
+    stage_runs.add(_stage_run(id=1))
 
     assert client.post("/workflows/feed_ranking/stage-runs/1/start").status_code == 204
     assert client.get("/workflows/feed_ranking/stage-runs/1").json()["status"] == "running"
@@ -189,22 +170,7 @@ def test_full_stage_run_lifecycle_via_worker_endpoints(client, stage_runs):
 
 
 def test_fail_stage_run_records_error(client, stage_runs):
-    stage_runs.add(
-        StageRun(
-            id=1,
-            workflow_run_id=None,
-            workflow_name="feed_ranking",
-            stage_name="score_items",
-            input_versions={},
-            promote=False,
-            output_version=None,
-            status=RunStatus.RUNNING,
-            requested_at=NOW,
-            started_at=NOW,
-            finished_at=None,
-            error=None,
-        )
-    )
+    stage_runs.add(_stage_run(id=1, status=RunStatus.RUNNING))
 
     response = client.post("/workflows/feed_ranking/stage-runs/1/fail", json={"error": "boom"})
     assert response.status_code == 204

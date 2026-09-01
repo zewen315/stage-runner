@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from models import RunStatus, Schedule, ScheduleScope, StageRun, WorkflowRun
+from models import RunStatus, Schedule, StageRun, WorkflowRun
 
 
 class InMemoryScheduleRepository:
@@ -13,8 +13,8 @@ class InMemoryScheduleRepository:
     def create(
         self,
         workflow_name: str,
-        scope: ScheduleScope,
-        stage_name: str | None,
+        start_from: str | None,
+        stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool | None,
         requested_at: str,
@@ -22,14 +22,13 @@ class InMemoryScheduleRepository:
         schedule = Schedule(
             id=self._next_id,
             workflow_name=workflow_name,
-            scope=scope,
-            stage_name=stage_name,
+            start_from=start_from,
+            stop_after=stop_after,
             input_versions=input_versions,
             promote=promote,
             requested_at=requested_at,
             dispatched_at=None,
             run_id=None,
-            stage_run_id=None,
         )
         self._schedules[schedule.id] = schedule
         self._next_id += 1
@@ -41,17 +40,12 @@ class InMemoryScheduleRepository:
             return None
         return schedule
 
-    def mark_dispatched(
-        self, schedule_id: int, *, dispatched_at: str, run_id: int | None = None, stage_run_id: int | None = None
-    ) -> None:
+    def mark_dispatched(self, schedule_id: int, *, dispatched_at: str, run_id: int) -> None:
         """Test-seeding helper: real dispatch happens in the Scheduler
         service against its own Postgres store, not through this
         repository -- tests use this to simulate "already dispatched"."""
         self._schedules[schedule_id] = replace(
-            self._schedules[schedule_id],
-            dispatched_at=dispatched_at,
-            run_id=run_id,
-            stage_run_id=stage_run_id,
+            self._schedules[schedule_id], dispatched_at=dispatched_at, run_id=run_id
         )
 
 

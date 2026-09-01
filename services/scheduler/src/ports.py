@@ -19,15 +19,20 @@ from models import ActiveWorkflowRun, PendingSchedule, StageRunRecord
 class ScheduleStore(Protocol):
     def pending_schedules(self) -> list[PendingSchedule]: ...
 
-    def mark_schedule_dispatched(
-        self, schedule_id: int, *, run_id: int | None = None, stage_run_id: int | None = None
-    ) -> None: ...
+    def mark_schedule_dispatched(self, schedule_id: int, *, run_id: int) -> None: ...
 
-    def create_workflow_run(self, workflow_name: str) -> int: ...
+    def create_workflow_run(
+        self,
+        workflow_name: str,
+        start_from: str | None,
+        stop_after: str | None,
+        input_versions: dict[str, int] | None,
+        promote: bool,
+    ) -> int: ...
 
     def create_stage_run(
         self,
-        workflow_run_id: int | None,
+        workflow_run_id: int,
         workflow_name: str,
         stage_name: str,
         input_versions: dict[str, int],
@@ -49,7 +54,7 @@ class RunQueue(Protocol):
     def enqueue_stage_run(
         self,
         stage_run_id: int,
-        workflow_run_id: int | None,
+        workflow_run_id: int,
         workflow_name: str,
         stage_name: str,
         input_versions: dict[str, int],

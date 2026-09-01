@@ -130,13 +130,13 @@ def test_promote_false_does_not_promote(tmp_path):
     assert resources.get_version("raw", 1) == {"n": 1}
 
 
-def test_standalone_stage_run_is_marked_is_test(tmp_path):
-    _write_simple_workflow(tmp_path, name="simple_standalone")
+def test_promote_false_marks_the_version_is_test(tmp_path):
+    _write_simple_workflow(tmp_path, name="simple_not_promoted")
     resources = InMemoryResourceClient()
     report = RecordingReport()
 
     process_message(
-        _message(1, "simple_standalone", "raw", workflow_run_id=None),
+        _message(1, "simple_not_promoted", "raw", promote=False),
         workflows_root=tmp_path,
         output_root=tmp_path / "output",
         resources=resources,
@@ -146,13 +146,13 @@ def test_standalone_stage_run_is_marked_is_test(tmp_path):
     assert resources.is_test_by_version[("raw", 1)] is True
 
 
-def test_orchestrated_stage_run_is_not_marked_is_test(tmp_path):
-    _write_simple_workflow(tmp_path, name="simple_orchestrated")
+def test_promote_true_does_not_mark_the_version_is_test(tmp_path):
+    _write_simple_workflow(tmp_path, name="simple_promoted")
     resources = InMemoryResourceClient()
     report = RecordingReport()
 
     process_message(
-        _message(1, "simple_orchestrated", "raw", workflow_run_id=42),
+        _message(1, "simple_promoted", "raw", promote=True),
         workflows_root=tmp_path,
         output_root=tmp_path / "output",
         resources=resources,

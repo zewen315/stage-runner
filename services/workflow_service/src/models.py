@@ -11,15 +11,14 @@ class RunStatus(str, Enum):
     FAILED = "failed"
 
 
-class ScheduleScope(str, Enum):
-    WORKFLOW = "workflow"
-    STAGE = "stage"
-
-
 @dataclass(frozen=True)
 class WorkflowRun:
     id: int
     workflow_name: str
+    start_from: str | None
+    stop_after: str | None
+    input_versions: dict[str, int] | None
+    promote: bool
     status: RunStatus
     requested_at: str
     started_at: str | None
@@ -30,7 +29,7 @@ class WorkflowRun:
 @dataclass(frozen=True)
 class StageRun:
     id: int
-    workflow_run_id: int | None
+    workflow_run_id: int
     workflow_name: str
     stage_name: str
     input_versions: dict[str, int]
@@ -47,26 +46,24 @@ class StageRun:
 class Schedule:
     id: int
     workflow_name: str
-    scope: ScheduleScope
-    stage_name: str | None
+    start_from: str | None
+    stop_after: str | None
     input_versions: dict[str, int] | None
     promote: bool | None
     requested_at: str
     dispatched_at: str | None
     run_id: int | None
-    stage_run_id: int | None
 
 
 @dataclass(frozen=True)
 class ScheduleStatus:
     """What get_schedule_status returns: the schedule itself, proxying the
-    status/error of whatever it dispatched to (if anything yet)."""
+    status/error of the WorkflowRun it dispatched to (if dispatched yet)."""
 
     id: int
     workflow_name: str
-    scope: ScheduleScope
-    stage_name: str | None
+    start_from: str | None
+    stop_after: str | None
     status: str
     error: str | None
     run_id: int | None
-    stage_run_id: int | None
