@@ -463,12 +463,20 @@ a.run-card:hover {
 
 .input-row {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.4rem;
 }
 
 .input-row input {
   flex: 1;
+}
+
+.input-row-label {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .checkbox {

@@ -56,6 +56,16 @@ class Schedule:
 
 
 @dataclass(frozen=True)
+class StageInfo:
+    """A stage's name and its direct dependencies, as declared in the
+    workflow's own registry -- not persisted anywhere, just a read
+    through to the workflow's code."""
+
+    name: str
+    depends_on: list[str]
+
+
+@dataclass(frozen=True)
 class ScheduleStatus:
     """What get_schedule_status returns: the schedule itself, proxying the
     status/error of the WorkflowRun it dispatched to (if dispatched yet)."""

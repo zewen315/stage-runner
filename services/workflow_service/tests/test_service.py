@@ -36,6 +36,31 @@ def service(schedules, workflow_runs, stage_runs, workflows_root):
     return WorkflowService(schedules, workflow_runs, stage_runs, workflows_root)
 
 
+def _write_stage_workflow(workflows_root, name):
+    """A real, loadable two-stage package: `raw` (no deps) -> `doubled`
+    (depends on `raw`) -- distinct `name` per test, since importlib caches
+    modules by name and would otherwise return a stale one."""
+    workflow_dir = workflows_root / name
+    workflow_dir.mkdir()
+    (workflow_dir / "__init__.py").write_text(
+        """
+from stages import StageRegistry
+
+registry = StageRegistry()
+
+
+@registry.stage("raw", depends_on=[])
+def raw():
+    return {"n": 1}
+
+
+@registry.stage("doubled", depends_on=["raw"])
+def doubled(raw):
+    return {"n": raw["n"] * 2}
+"""
+    )
+
+
 def _seed_workflow_run(
     workflow_runs, *, id=1, start_from=None, stop_after=None, promote=True, status=RunStatus.REQUESTED, error=None
 ):
@@ -244,6 +269,22 @@ class TestListWorkflows:
         (workflows_root / ".hidden").mkdir()
 
         assert service.list_workflows() == ["feed_ranking"]
+
+
+class TestListStages:
+    def test_lists_stages_in_dependency_order_with_dependencies(self, service, workflows_root):
+        _write_stage_workflow(workflows_root, "stage_list_ordering")
+
+        stages = service.list_stages("stage_list_ordering")
+
+        assert [(s.name, s.depends_on) for s in stages] == [
+            ("raw", []),
+            ("doubled", ["raw"]),
+        ]
+
+    def test_unknown_workflow_raises(self, service):
+        with pytest.raises(WorkflowNotFoundError):
+            service.list_stages("does_not_exist")
 
 
 class TestListRuns:

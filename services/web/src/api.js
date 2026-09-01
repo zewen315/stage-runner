@@ -27,6 +27,10 @@ export function listWorkflows() {
   return request('/workflows')
 }
 
+export function listStages(workflowName) {
+  return request(`/workflows/${workflowName}/stages`)
+}
+
 export function listRuns(workflowName, limit = 50) {
   return request(`/workflows/${workflowName}/runs?limit=${limit}`)
 }

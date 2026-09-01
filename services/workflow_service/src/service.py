@@ -14,13 +14,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dag import topological_order
+from workflow_loader import load_workflow
+
 from errors import (
     RunNotFoundError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
     WorkflowNotFoundError,
 )
-from models import RunStatus, Schedule, ScheduleStatus, StageRun, WorkflowRun
+from models import RunStatus, Schedule, ScheduleStatus, StageInfo, StageRun, WorkflowRun
 from ports import ScheduleRepository, StageRunRepository, WorkflowRunRepository
 
 
@@ -79,10 +82,12 @@ class WorkflowService:
         won't be produced within this run (only meaningful when
         `start_from` is set). `promote` left unset lets the Scheduler
         apply its default (true only for a full run). Stage-name existence
-        isn't validated here (this service never imports workflow code);
-        an unknown name fails at dispatch time instead. Record intent,
-        return immediately -- the Scheduler picks up undispatched
-        schedules on its own poll cycle."""
+        isn't validated here -- an unknown name fails at dispatch time
+        instead, same as always; see `list_stages` below for the one place
+        this service does load a workflow's registry, for a different
+        reason (offering real names to pick from, not validating one).
+        Record intent, return immediately -- the Scheduler picks up
+        undispatched schedules on its own poll cycle."""
         self._require_workflow(workflow_name)
         return self._schedules.create(
             workflow_name,
@@ -137,6 +142,21 @@ class WorkflowService:
                 run_id=None,
             )
             for s in self._schedules.list_pending(workflow_name)
+        ]
+
+    def list_stages(self, workflow_name: str) -> list[StageInfo]:
+        """Ordered stage names plus each one's direct dependencies -- lets
+        a client (the web UI's "start from" dropdown) offer real names to
+        pick from and know which upstream versions it needs to supply as
+        input_versions when skipping ahead to one. This does load the
+        workflow's actual registry (a plain, side-effect-free Python
+        import -- the same thing the Scheduler already does to run it),
+        unlike every other method here."""
+        self._require_workflow(workflow_name)
+        registry = load_workflow(self._workflows_root / workflow_name)
+        return [
+            StageInfo(name=stage.name, depends_on=list(stage.depends_on))
+            for stage in topological_order(registry.all())
         ]
 
     def list_workflows(self) -> list[str]:

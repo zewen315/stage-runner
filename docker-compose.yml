@@ -63,7 +63,9 @@ services:
         condition: service_healthy
 
   workflow-service:
-    build: ./services/workflow_service
+    build:
+      context: .
+      dockerfile: services/workflow_service/Dockerfile
     ports:
       - "8001:8000"
     environment:

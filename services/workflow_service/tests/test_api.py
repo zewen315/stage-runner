@@ -164,6 +164,33 @@ def test_list_workflows(client):
     assert response.json() == ["feed_ranking"]
 
 
+def test_list_stages(client, tmp_path):
+    workflow_dir = tmp_path / "api_stage_list"
+    workflow_dir.mkdir()
+    (workflow_dir / "__init__.py").write_text(
+        """
+from stages import StageRegistry
+
+registry = StageRegistry()
+
+
+@registry.stage("raw", depends_on=[])
+def raw():
+    return {"n": 1}
+"""
+    )
+
+    response = client.get("/workflows/api_stage_list/stages")
+
+    assert response.status_code == 200
+    assert response.json() == [{"name": "raw", "depends_on": []}]
+
+
+def test_list_stages_unknown_workflow_is_404(client):
+    response = client.get("/workflows/does_not_exist/stages")
+    assert response.status_code == 404
+
+
 def test_list_runs_most_recent_first(client, workflow_runs):
     workflow_runs.add(_workflow_run(id=1))
     workflow_runs.add(_workflow_run(id=2))

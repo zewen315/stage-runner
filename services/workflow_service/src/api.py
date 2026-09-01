@@ -131,6 +131,13 @@ class StageRunResponse(BaseModel):
     error: str | None
 
 
+class StageInfoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    depends_on: list[str]
+
+
 class RequestRunRequest(BaseModel):
     start_from: str | None = None
     stop_after: str | None = None
@@ -149,6 +156,11 @@ class FailStageRunRequest(BaseModel):
 @app.get("/workflows", response_model=list[str])
 def list_workflows(service: WorkflowService = Depends(get_service)):
     return service.list_workflows()
+
+
+@app.get("/workflows/{name}/stages", response_model=list[StageInfoResponse])
+def list_stages(name: str, service: WorkflowService = Depends(get_service)):
+    return service.list_stages(name)
 
 
 @app.post("/workflows/{name}/runs", response_model=ScheduleResponse, status_code=202)
