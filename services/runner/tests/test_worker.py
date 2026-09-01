@@ -1,5 +1,3 @@
-import json
-
 import pytest
 from resource_store_client import InMemoryResourceClient
 
@@ -7,11 +5,10 @@ from worker import process_message
 
 
 def _write_simple_workflow(workflows_root, name="simple", *, boom=False):
-    """A minimal one-stage workflow package: import -> stage."""
+    """A minimal two-stage workflow package: a root stage with no
+    dependencies, then one that depends on it."""
     workflow_dir = workflows_root / name
     workflow_dir.mkdir()
-    (workflow_dir / "data").mkdir()
-    (workflow_dir / "data" / "raw.json").write_text(json.dumps({"n": 1}))
 
     body = 'raise ValueError("boom")' if boom else "return {'n': raw['n'] * 2}"
     (workflow_dir / "__init__.py").write_text(
@@ -19,7 +16,11 @@ def _write_simple_workflow(workflows_root, name="simple", *, boom=False):
 from stages import StageRegistry
 
 registry = StageRegistry()
-registry.import_stage("raw", path="data/raw.json")
+
+
+@registry.stage("raw", depends_on=[])
+def raw():
+    return {{'n': 1}}
 
 
 @registry.stage("doubled", depends_on=["raw"])
@@ -94,7 +95,7 @@ def test_only_the_named_stage_runs_not_the_whole_workflow(tmp_path):
 def test_pinned_input_version_is_resolved_instead_of_current(tmp_path):
     _write_simple_workflow(tmp_path, name="simple_pinned")
     resources = InMemoryResourceClient()
-    resources.upload_version("raw", {"n": 100})  # v1, never used by this workflow's import stage
+    resources.upload_version("raw", {"n": 100})  # v1, never produced by this workflow's "raw" stage
     report = RecordingReport()
 
     process_message(

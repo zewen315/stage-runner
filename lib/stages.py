@@ -1,17 +1,14 @@
 """Stage definitions and the registry a workflow module builds by calling
-`stage` and `import_stage` on its own StageRegistry.
+`stage` on its own StageRegistry.
 
-Two kinds, deliberately different shapes:
-- "stage": pure Python logic. Takes upstream values as arguments, returns a
-  new value. Never touches the filesystem or network -- fully unit-testable
-  with plain values. Every stage's output is a resource, including the
-  last one in a workflow -- there's no separate notion of a run's "final
-  output" leaving the system some other way.
-- "import": the only place external input enters the system. No function,
-  no dependencies -- just a name and a file path to read.
-
-Keeping import generic and function-less means only one small, reusable
-piece of code ever does file I/O; every "stage" a user writes is pure.
+A stage is pure Python logic: it takes upstream values as arguments and
+returns a new value, never touching the filesystem or network -- fully
+unit-testable with plain values. Every stage's output is a resource,
+including a workflow's first and last stages -- there's no special
+"external input enters here" or "the result leaves here" stage kind.
+A stage with no dependencies (a workflow's root) expects its own resource
+to already exist in the Resource Store; nothing runs to produce it. See
+`cli/stagerunner.py`'s `resource upload` command for injecting one.
 """
 
 from __future__ import annotations
@@ -19,16 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
-Kind = Literal["stage", "import"]
-
 
 @dataclass(frozen=True)
 class StageDef:
     name: str
-    kind: Kind
+    fn: Callable[..., Any]
     depends_on: list[str] = field(default_factory=list)
-    fn: Callable[..., Any] | None = None
-    path: str | None = None
 
 
 FailurePolicy = Literal["halt", "fallback"]
@@ -52,15 +45,10 @@ class StageRegistry:
 
     def stage(self, name: str, depends_on: list[str] = ()):
         def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-            self._stages[name] = StageDef(
-                name=name, kind="stage", depends_on=list(depends_on), fn=fn
-            )
+            self._stages[name] = StageDef(name=name, fn=fn, depends_on=list(depends_on))
             return fn
 
         return decorator
-
-    def import_stage(self, name: str, path: str) -> None:
-        self._stages[name] = StageDef(name=name, kind="import", path=path)
 
     def get(self, name: str) -> StageDef:
         return self._stages[name]

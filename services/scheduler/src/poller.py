@@ -20,9 +20,11 @@ A workflow whose registry declares `on_failure="fallback"` doesn't halt when
 a stage fails -- the Scheduler treats it as if that stage had produced its
 currently-promoted resource version instead (same `input_versions`-pinning
 mechanism `start_from` already uses), and keeps dispatching downstream.
-That's the one thing here that reaches outside this service's own Postgres
-DB and Redis: resolving "currently-promoted" means asking resource_store,
-via the same `ResourceClient` the Runner already uses.
+That, and resolving a workflow root's dependency (a name with no
+registered stage -- expected to already be an injected resource) to its
+current version, are the two things here that reach outside this
+service's own Postgres DB and Redis: both ask resource_store, via the
+same `ResourceClient` the Runner already uses.
 
 `poll_once` takes its collaborators (a ScheduleStore, a RunQueue, a
 registry_provider for loading a workflow's StageRegistry, and a
@@ -141,6 +143,29 @@ def _progress(
 
         if run.start_from is not None:
             done.update(run.input_versions or {})
+
+        # A dependency that isn't a registered stage (e.g. raw_events, a
+        # workflow root) is never dispatched -- it's expected to already
+        # exist as an injected resource. Resolve it to its current version
+        # once, the same way an unpinned dependency resolves for a
+        # standalone StageRun; if it doesn't exist yet, this run can't
+        # proceed at all.
+        external_deps = {
+            dep for name in reachable for dep in by_name[name].depends_on if dep not in by_name and dep not in done
+        }
+        unresolved = None
+        for dep in sorted(external_deps):
+            try:
+                version, _ = resources.get(dep)
+            except Exception:  # noqa: BLE001 -- no current version, store unreachable, etc.
+                unresolved = dep
+                break
+            done[dep] = version
+        if unresolved is not None:
+            store.mark_workflow_run_failed(
+                run.id, error=f"no current version for {unresolved!r} -- inject it before running"
+            )
+            continue
 
         dispatched_any = False
         for stage_def in order:

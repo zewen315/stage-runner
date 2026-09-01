@@ -15,7 +15,7 @@ def _poll(store, queue, registry_provider, resources=None):
 def _linear_registry() -> StageRegistry:
     """raw -> doubled -> tripled, a simple two-hop chain."""
     registry = StageRegistry()
-    registry.import_stage("raw", path="raw.json")
+    registry.stage("raw")(lambda: None)
 
     @registry.stage("doubled", depends_on=["raw"])
     def doubled(raw):
@@ -31,7 +31,7 @@ def _linear_registry() -> StageRegistry:
 def _branching_registry() -> StageRegistry:
     """raw -> doubled -> {tripled, quadrupled} (both depend on doubled)."""
     registry = StageRegistry()
-    registry.import_stage("raw", path="raw.json")
+    registry.stage("raw")(lambda: None)
 
     @registry.stage("doubled", depends_on=["raw"])
     def doubled(raw):
@@ -44,6 +44,19 @@ def _branching_registry() -> StageRegistry:
     @registry.stage("quadrupled", depends_on=["doubled"])
     def quadrupled(doubled):
         return doubled * 4
+
+    return registry
+
+
+def _registry_with_injected_root() -> StageRegistry:
+    """"raw" has no stage at all -- a workflow root with no producer,
+    expected to already exist in the Resource Store (injected directly,
+    not run)."""
+    registry = StageRegistry()
+
+    @registry.stage("doubled", depends_on=["raw"])
+    def doubled(raw):
+        return raw * 2
 
     return registry
 
@@ -276,7 +289,7 @@ class TestStopAfter:
 def _fallback_registry() -> StageRegistry:
     """Same shape as _linear_registry, but on_failure="fallback"."""
     registry = StageRegistry(on_failure="fallback")
-    registry.import_stage("raw", path="raw.json")
+    registry.stage("raw")(lambda: None)
 
     @registry.stage("doubled", depends_on=["raw"])
     def doubled(raw):
@@ -336,6 +349,32 @@ class TestFallback:
         store.add_stage_run(run_id, "doubled", status="failed", error="boom")
 
         poll_once(store, queue, _registry_provider(_linear_registry()), resources)
+
+        assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
+
+class TestInjectedRootDependency:
+    def test_resolves_current_version_and_dispatches(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()
+        version = resources.upload_version("raw", 5)
+        resources.promote("raw", version)
+        store.add_workflow_run("feed_ranking")
+
+        poll_once(store, queue, _registry_provider(_registry_with_injected_root()), resources)
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["doubled"]
+        assert queue.enqueued[0]["input_versions"] == {"raw": version}
+
+    def test_fails_the_run_when_not_yet_injected(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()  # "raw" never uploaded
+        store.add_workflow_run("feed_ranking")
+
+        poll_once(store, queue, _registry_provider(_registry_with_injected_root()), resources)
 
         assert queue.enqueued == []
         assert store.active_workflow_runs() == []

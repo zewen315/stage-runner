@@ -4,14 +4,18 @@
       [--input <resource>=<version> ...] [--promote]
       [--base-url URL] [--no-wait]
 
-Thin client: this only ever talks HTTP to the Workflow Service (through the
-gateway, by default). It requests a trigger and optionally polls for its
-outcome -- it has no DAG/execution logic of its own, no knowledge of the
-Resource Store, and no dependency on the Scheduler's or Runner's
-internals. A request only ever creates a `schedules` row; actually
-dispatching and running it happens elsewhere, asynchronously: the
-Scheduler drains `schedules` and dispatches stage-by-stage, and the Runner
-worker executes exactly one stage per dispatch.
+  uv run python cli/stagerunner.py resource upload <name> <file>
+      [--promote | --no-promote] [--base-url URL]
+
+Thin client: this only ever talks HTTP -- to the Workflow Service for
+`run`, to the Resource Store for `resource upload` (both through the
+gateway, by default). It has no DAG/execution logic of its own and no
+dependency on the Scheduler's or Runner's internals.
+
+`run` only ever creates a `schedules` row; actually dispatching and
+running it happens elsewhere, asynchronously: the Scheduler drains
+`schedules` and dispatches stage-by-stage, and the Runner worker executes
+exactly one stage per dispatch.
 
 Every run is a WorkflowRun -- `--stage`/`--start-from`/`--stop-after`
 narrow it to a sub-range of the workflow's DAG rather than naming a
@@ -20,13 +24,22 @@ different kind of thing. Plain `run <workflow>` runs the whole DAG.
 just that one stage). `--start-from NAME` alone resumes the rest of the
 pipeline from that stage onward. `--stop-after NAME` alone runs from the
 natural roots and stops once that stage completes.
+
+`resource upload` is how a workflow root (a stage-less dependency, e.g.
+`raw_events`) gets its value into the system in the first place -- every
+stage's input and output is a resource, so there's no other way in. Reads
+`file` as JSON and uploads it as a new version; promotes by default (unlike
+`run`'s `--promote`) since an injected root is useless to a run until it's
+current.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
+from pathlib import Path
 
 import httpx
 
@@ -57,6 +70,53 @@ def _poll_schedule(client: httpx.Client, workflow: str, schedule_id: int, *, no_
     if schedule["status"] == "failed":
         print(f"error: {schedule['error']}", file=sys.stderr)
         return 1
+    return 0
+
+
+def _run(args: argparse.Namespace) -> int:
+    start_from = args.stage or args.start_from
+    stop_after = args.stage or args.stop_after
+
+    body: dict = {}
+    if start_from is not None:
+        body["start_from"] = start_from
+    if stop_after is not None:
+        body["stop_after"] = stop_after
+    if args.input_versions:
+        body["input_versions"] = dict(args.input_versions)
+    if args.promote:
+        body["promote"] = True
+
+    client = httpx.Client(base_url=args.base_url)
+    response = client.post(f"/workflows/{args.workflow}/runs", json=body)
+
+    if response.status_code == 404:
+        print(f"error: no workflow {args.workflow!r}", file=sys.stderr)
+        return 1
+    response.raise_for_status()
+    schedule = response.json()
+
+    return _poll_schedule(client, args.workflow, schedule["id"], no_wait=args.no_wait)
+
+
+def _resource_upload(args: argparse.Namespace) -> int:
+    value = json.loads(Path(args.file).read_text())
+
+    client = httpx.Client(base_url=args.base_url)
+    response = client.post(
+        f"/resources/{args.name}/versions", json={"value": value, "is_test": not args.promote}
+    )
+    if response.status_code == 400:
+        print(f"error: {response.json().get('detail', response.text)}", file=sys.stderr)
+        return 1
+    response.raise_for_status()
+    version = response.json()["version"]
+
+    if args.promote:
+        client.post(f"/resources/{args.name}/promotions", json={"version": version}).raise_for_status()
+
+    status = "current" if args.promote else "uploaded, not promoted"
+    print(f"{args.name} v{version}: {status}")
     return 0
 
 
@@ -92,34 +152,30 @@ def main(argv: list[str] | None = None) -> int:
         "--no-wait", action="store_true", help="Request the run and return immediately"
     )
 
+    resource_parser = subparsers.add_parser("resource", help="Manage resources directly")
+    resource_subparsers = resource_parser.add_subparsers(dest="resource_command", required=True)
+
+    upload_parser = resource_subparsers.add_parser(
+        "upload", help="Upload a JSON file as a new resource version"
+    )
+    upload_parser.add_argument("name", help="resource name, e.g. raw_events")
+    upload_parser.add_argument("file", help="path to a JSON file holding the resource's value")
+    upload_parser.add_argument(
+        "--promote",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="make this version current (default: true -- an unpromoted upload isn't visible to a run "
+        "unless pinned by --input)",
+    )
+    upload_parser.add_argument("--base-url", default="http://localhost:8080", help="API gateway base URL")
+
     args = parser.parse_args(argv)
 
-    if args.stage is not None and (args.start_from is not None or args.stop_after is not None):
-        parser.error("--stage cannot be combined with --start-from/--stop-after")
-
-    start_from = args.stage or args.start_from
-    stop_after = args.stage or args.stop_after
-
-    body: dict = {}
-    if start_from is not None:
-        body["start_from"] = start_from
-    if stop_after is not None:
-        body["stop_after"] = stop_after
-    if args.input_versions:
-        body["input_versions"] = dict(args.input_versions)
-    if args.promote:
-        body["promote"] = True
-
-    client = httpx.Client(base_url=args.base_url)
-    response = client.post(f"/workflows/{args.workflow}/runs", json=body)
-
-    if response.status_code == 404:
-        print(f"error: no workflow {args.workflow!r}", file=sys.stderr)
-        return 1
-    response.raise_for_status()
-    schedule = response.json()
-
-    return _poll_schedule(client, args.workflow, schedule["id"], no_wait=args.no_wait)
+    if args.command == "run":
+        if args.stage is not None and (args.start_from is not None or args.stop_after is not None):
+            run_parser.error("--stage cannot be combined with --start-from/--stop-after")
+        return _run(args)
+    return _resource_upload(args)
 
 
 if __name__ == "__main__":

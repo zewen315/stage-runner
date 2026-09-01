@@ -7,7 +7,7 @@ correctness bug, not a crash. Exists to demonstrate that gap: this
 workflow should start failing loudly the moment resource schema
 validation lands. Otherwise identical to `feed_success`.
 
-raw_events (import) -> aggregate_signals -> score_items (wrong shape) -> rank_feed -> publish_feed (export)
+raw_events (injected resource, no stage) -> aggregate_signals -> score_items (wrong shape) -> rank_feed -> publish_feed
 
 Importing this package registers every stage into `registry` (each stage
 file registers itself as a side effect of being imported below); `registry`
@@ -16,7 +16,6 @@ is what the Scheduler actually runs.
 
 from .registry import registry
 from . import (  # noqa: F401 -- imported for their registration side effects
-    raw_events,
     aggregate_signals,
     score_items,
     rank_feed,

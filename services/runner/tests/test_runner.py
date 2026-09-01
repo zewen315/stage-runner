@@ -1,5 +1,3 @@
-import json
-
 import pytest
 from resource_store_client import InMemoryResourceClient
 
@@ -12,25 +10,16 @@ def resources():
     return InMemoryResourceClient()
 
 
-def test_import_stage_uploads_file_contents(tmp_path, resources):
-    input_path = tmp_path / "raw.json"
-    input_path.write_text(json.dumps({"n": 1}))
-
+def test_stage_with_no_dependencies_uploads_its_return_value(resources):
+    """A workflow root: no dependencies, nothing to resolve -- just runs
+    and produces a resource, same as any other stage."""
     registry = StageRegistry()
-    registry.import_stage("raw", path=str(input_path))
+
+    @registry.stage("raw", depends_on=[])
+    def raw():
+        return {"n": 1}
 
     Runner(resources).run_stage(registry.get("raw"), {}, promote=True)
-
-    assert resources.get("raw") == (1, {"n": 1})
-
-
-def test_import_path_resolves_relative_to_workflow_dir(tmp_path, resources):
-    (tmp_path / "raw.json").write_text(json.dumps({"n": 1}))
-
-    registry = StageRegistry()
-    registry.import_stage("raw", path="raw.json")  # relative, not absolute
-
-    Runner(resources, workflow_dir=tmp_path).run_stage(registry.get("raw"), {}, promote=True)
 
     assert resources.get("raw") == (1, {"n": 1})
 
@@ -125,7 +114,6 @@ def test_stage_execution_goes_through_the_injected_executor(resources):
 
     executor = RecordingExecutor()
     registry = StageRegistry()
-    registry.import_stage("raw", path="unused.json")
 
     @registry.stage("doubled", depends_on=["raw"])
     def doubled(raw):

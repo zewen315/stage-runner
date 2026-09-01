@@ -1,4 +1,14 @@
-"""Topological ordering of a StageRegistry's stages, by `depends_on`."""
+"""Topological ordering of a StageRegistry's stages, by `depends_on`.
+
+A `depends_on` name that isn't itself a registered stage is an external
+dependency -- a resource with no stage that produces it, expected to
+already exist in the Resource Store (injected directly; see `resource
+upload` in the CLI). Neither function here treats that as an error: it's
+simply not a stage to order or walk into. Resolving it against the
+Resource Store's current version is the Scheduler's job (poller.py), not
+this module's -- this module only knows about stages, never the Resource
+Store.
+"""
 
 from __future__ import annotations
 
@@ -10,16 +20,12 @@ class CycleError(Exception):
 
 
 class UnknownDependencyError(Exception):
-    """Raised when a stage depends on a name that isn't registered."""
+    """Raised when `start_from` names something that isn't a registered
+    stage."""
 
 
 def topological_order(stages: list[StageDef]) -> list[StageDef]:
     by_name = {s.name: s for s in stages}
-
-    for stage in stages:
-        for dep in stage.depends_on:
-            if dep not in by_name:
-                raise UnknownDependencyError(f"{stage.name!r} depends on unregistered stage {dep!r}")
 
     visited: set[str] = set()
     in_progress: set[str] = set()
@@ -33,7 +39,8 @@ def topological_order(stages: list[StageDef]) -> list[StageDef]:
 
         in_progress.add(name)
         for dep in by_name[name].depends_on:
-            visit(dep)
+            if dep in by_name:
+                visit(dep)
         in_progress.discard(name)
 
         visited.add(name)
@@ -59,7 +66,7 @@ def reachable_from(stages: list[StageDef], start_from: str) -> set[str]:
     def depends_on_start(name: str) -> bool:
         if name not in memo:
             memo[name] = name == start_from or any(
-                depends_on_start(dep) for dep in by_name[name].depends_on
+                depends_on_start(dep) for dep in by_name[name].depends_on if dep in by_name
             )
         return memo[name]
 

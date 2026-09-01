@@ -12,7 +12,7 @@ run (e.g. `feed_success`) -- resource identity is global, so any
 workflow's success counts. With no such version, this degrades to halting,
 same as `feed_crash`.
 
-raw_events (import) -> aggregate_signals -> score_items (crashes, falls back) -> rank_feed -> publish_feed (export)
+raw_events (injected resource, no stage) -> aggregate_signals -> score_items (crashes, falls back) -> rank_feed -> publish_feed
 
 Importing this package registers every stage into `registry` (each stage
 file registers itself as a side effect of being imported below); `registry`
@@ -21,7 +21,6 @@ is what the Scheduler actually runs.
 
 from .registry import registry
 from . import (  # noqa: F401 -- imported for their registration side effects
-    raw_events,
     aggregate_signals,
     score_items,
     rank_feed,

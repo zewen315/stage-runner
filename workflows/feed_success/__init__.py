@@ -1,9 +1,12 @@
 """Feed ranking pipeline, happy path: ingest events -> aggregate signals ->
-score -> rank -> publish. Every real compute stage sleeps 10s (import/export
-are plain file I/O, no delay) so the Scheduler's stage-by-stage dispatch is
-visible live -- see `docker compose logs -f scheduler runner`.
+score -> rank -> publish. Every stage sleeps 10s so the Scheduler's
+stage-by-stage dispatch is visible live -- see
+`docker compose logs -f scheduler runner`.
 
-raw_events (import) -> aggregate_signals -> score_items -> rank_feed -> publish_feed (export)
+raw_events (injected resource, no stage) -> aggregate_signals -> score_items -> rank_feed -> publish_feed
+
+`raw_events` has to already exist in the Resource Store before this runs
+-- see `resource upload` in the CLI.
 
 Siblings `feed_timeout`, `feed_crash`, and `feed_validation_failed` are
 identical except `score_items` misbehaves in one specific way each --
@@ -16,7 +19,6 @@ is what the Scheduler actually runs.
 
 from .registry import registry
 from . import (  # noqa: F401 -- imported for their registration side effects
-    raw_events,
     aggregate_signals,
     score_items,
     rank_feed,
