@@ -85,7 +85,16 @@ export default function RunDetail() {
             </div>
             <div className="stage-card-meta">
               <span>in: {formatVersions(sr.input_versions)}</span>
-              <span>out: {sr.output_version ?? '—'}</span>
+              <span>
+                out:{' '}
+                {sr.output_version != null ? (
+                  <Link to={`/resources/${sr.stage_name}?version=${sr.output_version}`}>
+                    v{sr.output_version}
+                  </Link>
+                ) : (
+                  '—'
+                )}
+              </span>
             </div>
             {sr.error && <p className="error">{sr.error}</p>}
           </div>
@@ -98,7 +107,14 @@ export default function RunDetail() {
 function formatVersions(versions) {
   const entries = Object.entries(versions || {})
   if (entries.length === 0) return '(none)'
-  return entries.map(([name, version]) => `${name} v${version}`).join(', ')
+  return entries.map(([name, version], i) => (
+    <span key={name}>
+      {i > 0 && ', '}
+      <Link to={`/resources/${name}?version=${version}`}>
+        {name} v{version}
+      </Link>
+    </span>
+  ))
 }
 
 function formatTime(iso) {

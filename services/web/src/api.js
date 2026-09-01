@@ -66,6 +66,10 @@ export function listVersions(name) {
   return request(`/resources/${name}/versions`)
 }
 
+export function getVersion(name, version) {
+  return request(`/resources/${name}/versions/${version}`)
+}
+
 export function promote(name, version) {
   return request(`/resources/${name}/promotions`, {
     method: 'POST',
