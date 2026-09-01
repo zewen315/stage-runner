@@ -209,3 +209,51 @@ class TestStageRunLifecycle:
     def test_unknown_stage_run_raises(self, service):
         with pytest.raises(StageRunNotFoundError):
             service.start_stage_run("feed_ranking", 999)
+
+
+class TestListWorkflows:
+    def test_lists_directory_names_under_workflows_root(self, service, workflows_root):
+        (workflows_root / "another_workflow").mkdir()
+
+        assert service.list_workflows() == ["another_workflow", "feed_ranking"]
+
+    def test_ignores_dotfiles_and_dunder_dirs(self, service, workflows_root):
+        (workflows_root / "__pycache__").mkdir()
+        (workflows_root / ".hidden").mkdir()
+
+        assert service.list_workflows() == ["feed_ranking"]
+
+
+class TestListRuns:
+    def test_lists_only_runs_for_that_workflow_most_recent_first(self, service, workflow_runs, workflows_root):
+        (workflows_root / "other").mkdir()
+        _seed_workflow_run(workflow_runs, id=1)
+        _seed_workflow_run(workflow_runs, id=2)
+        other = WorkflowRun(
+            id=3,
+            workflow_name="other",
+            start_from=None,
+            stop_after=None,
+            input_versions=None,
+            promote=True,
+            status=RunStatus.REQUESTED,
+            requested_at=NOW,
+            started_at=None,
+            finished_at=None,
+            error=None,
+        )
+        workflow_runs.add(other)
+
+        runs = service.list_runs("feed_ranking")
+
+        assert [r.id for r in runs] == [2, 1]
+
+    def test_respects_limit(self, service, workflow_runs):
+        _seed_workflow_run(workflow_runs, id=1)
+        _seed_workflow_run(workflow_runs, id=2)
+
+        assert [r.id for r in service.list_runs("feed_ranking", limit=1)] == [2]
+
+    def test_unknown_workflow_raises(self, service):
+        with pytest.raises(WorkflowNotFoundError):
+            service.list_runs("does_not_exist")

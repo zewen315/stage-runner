@@ -213,3 +213,37 @@ class TestPromote:
             ],
         )
         assert results["current"].value == {"n": 2}
+
+
+class TestListResources:
+    def test_empty_when_none_created(self, service):
+        assert service.list_resources() == []
+
+    def test_lists_all_resources_by_name(self, service):
+        run(service, [Step("create_resource", ["transform"]), Step("create_resource", ["fetch"])])
+
+        assert [r.name for r in service.list_resources()] == ["fetch", "transform"]
+
+
+class TestListVersions:
+    def test_empty_when_no_versions_uploaded(self, service):
+        run(service, [Step("create_resource", ["fetch"])])
+
+        assert service.list_versions("fetch") == []
+
+    def test_lists_versions_oldest_to_newest(self, service):
+        results = run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}], name="v1"),
+                Step("upload_version", ["fetch", {"n": 2}], name="v2"),
+            ],
+        )
+
+        versions = service.list_versions("fetch")
+        assert [v.id for v in versions] == [results["v1"].id, results["v2"].id]
+
+    def test_unknown_resource_raises(self, service):
+        with pytest.raises(ResourceNotFoundError):
+            service.list_versions("does_not_exist")

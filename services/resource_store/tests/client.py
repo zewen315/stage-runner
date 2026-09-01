@@ -39,3 +39,9 @@ class ResourceStoreClient:
 
     def dependencies(self, name: str, version: int) -> httpx.Response:
         return self._http.get(f"/resources/{name}/versions/{version}/dependencies")
+
+    def list_resources(self) -> httpx.Response:
+        return self._http.get("/resources")
+
+    def list_versions(self, name: str) -> httpx.Response:
+        return self._http.get(f"/resources/{name}/versions")

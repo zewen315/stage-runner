@@ -8,3 +8,5 @@ __pycache__/
 *.db
 *.db-journal
 run_output/
+node_modules/
+dist/

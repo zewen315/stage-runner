@@ -35,6 +35,10 @@ class ScheduleRepository(Protocol):
 class WorkflowRunRepository(Protocol):
     def get(self, workflow_name: str, run_id: int) -> WorkflowRun | None: ...
 
+    def list_for_workflow(self, workflow_name: str, limit: int) -> list[WorkflowRun]:
+        """Most-recent-first."""
+        ...
+
 
 class StageRunRepository(Protocol):
     def get(self, workflow_name: str, stage_run_id: int) -> StageRun | None: ...

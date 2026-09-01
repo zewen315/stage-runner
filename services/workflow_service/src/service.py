@@ -120,8 +120,19 @@ class WorkflowService:
             run_id=run.id,
         )
 
+    def list_workflows(self) -> list[str]:
+        return sorted(
+            d.name
+            for d in self._workflows_root.iterdir()
+            if d.is_dir() and not d.name.startswith(("_", "."))
+        )
+
     def get_run(self, workflow_name: str, run_id: int) -> WorkflowRun:
         return self._require_run(workflow_name, run_id)
+
+    def list_runs(self, workflow_name: str, limit: int = 50) -> list[WorkflowRun]:
+        self._require_workflow(workflow_name)
+        return self._workflow_runs.list_for_workflow(workflow_name, limit)
 
     def list_stage_runs_for_run(self, workflow_name: str, run_id: int) -> list[StageRun]:
         self._require_run(workflow_name, run_id)

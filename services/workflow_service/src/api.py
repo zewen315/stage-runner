@@ -146,6 +146,11 @@ class FailStageRunRequest(BaseModel):
     error: str
 
 
+@app.get("/workflows", response_model=list[str])
+def list_workflows(service: WorkflowService = Depends(get_service)):
+    return service.list_workflows()
+
+
 @app.post("/workflows/{name}/runs", response_model=ScheduleResponse, status_code=202)
 def request_run(
     name: str,
@@ -160,6 +165,11 @@ def request_run(
 @app.get("/workflows/{name}/schedules/{schedule_id}", response_model=ScheduleResponse)
 def get_schedule_status(name: str, schedule_id: int, service: WorkflowService = Depends(get_service)):
     return service.get_schedule_status(name, schedule_id)
+
+
+@app.get("/workflows/{name}/runs", response_model=list[WorkflowRunResponse])
+def list_runs(name: str, limit: int = 50, service: WorkflowService = Depends(get_service)):
+    return service.list_runs(name, limit)
 
 
 @app.get("/workflows/{name}/runs/{run_id}", response_model=WorkflowRunResponse)

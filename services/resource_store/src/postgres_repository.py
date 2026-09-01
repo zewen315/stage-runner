@@ -77,6 +77,11 @@ class PostgresMetadataRepository:
             row = cur.fetchone()
         return Resource(id=row[0], name=row[1], current_version_id=row[2]) if row else None
 
+    def list_resources(self) -> list[Resource]:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT id, name, current_version_id FROM resources ORDER BY name")
+            return [Resource(id=row[0], name=row[1], current_version_id=row[2]) for row in cur.fetchall()]
+
     def next_version(self, resource_id: int) -> int:
         with self._conn.cursor() as cur:
             cur.execute(
@@ -131,6 +136,17 @@ class PostgresMetadataRepository:
             )
             row = cur.fetchone()
         return self._version_from_row(row) if row else None
+
+    def list_versions(self, resource_id: int) -> list[ResourceVersion]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, resource_id, version, storage_uri, created_at, is_test
+                FROM resource_versions WHERE resource_id = %s ORDER BY version
+                """,
+                (resource_id,),
+            )
+            return [self._version_from_row(row) for row in cur.fetchall()]
 
     @staticmethod
     def _version_from_row(row) -> ResourceVersion:

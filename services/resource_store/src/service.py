@@ -106,6 +106,13 @@ class ResourceStoreService:
         record = self._require_version(resource, version)
         return [self._metadata.get_version_by_id(vid) for vid in self._metadata.get_dependencies(record.id)]
 
+    def list_resources(self) -> list[Resource]:
+        return self._metadata.list_resources()
+
+    def list_versions(self, name: str) -> list[ResourceVersion]:
+        resource = self._require_resource(name)
+        return self._metadata.list_versions(resource.id)
+
     # -- internal helpers ----------------------------------------------
 
     def _require_resource(self, name: str) -> Resource:

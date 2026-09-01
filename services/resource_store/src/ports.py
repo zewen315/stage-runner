@@ -22,6 +22,8 @@ class MetadataRepository(Protocol):
 
     def get_resource(self, name: str) -> Resource | None: ...
 
+    def list_resources(self) -> list[Resource]: ...
+
     def next_version(self, resource_id: int) -> int: ...
 
     def record_version(
@@ -31,6 +33,10 @@ class MetadataRepository(Protocol):
     def get_version(self, resource_id: int, version: int) -> ResourceVersion | None: ...
 
     def get_version_by_id(self, version_id: int) -> ResourceVersion | None: ...
+
+    def list_versions(self, resource_id: int) -> list[ResourceVersion]:
+        """All versions of a resource, ordered oldest to newest."""
+        ...
 
     def set_dependencies(self, version_id: int, depends_on_ids: list[int]) -> None:
         """Replace the full set of direct dependencies for `version_id`."""

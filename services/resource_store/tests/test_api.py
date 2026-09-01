@@ -111,6 +111,35 @@ class TestErrorStatusCodes:
         )
 
 
+class TestListRoutes:
+    def test_list_resources(self, client):
+        run(client, [Step("create_resource", ["fetch"])])
+
+        response = client.list_resources()
+
+        assert response.status_code == 200
+        assert [r["name"] for r in response.json()] == ["fetch"]
+
+    def test_list_versions(self, client):
+        run(
+            client,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}]),
+                Step("upload_version", ["fetch", {"n": 2}]),
+            ],
+        )
+
+        response = client.list_versions("fetch")
+
+        assert response.status_code == 200
+        assert [v["version"] for v in response.json()] == [1, 2]
+
+    def test_list_versions_unknown_resource_is_404(self, client):
+        response = client.list_versions("does_not_exist")
+        assert response.status_code == 404
+
+
 def test_healthz():
     response = TestClient(app).get("/healthz")
     assert response.status_code == 200

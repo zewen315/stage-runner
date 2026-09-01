@@ -63,6 +63,10 @@ class InMemoryWorkflowRunRepository:
             return None
         return run
 
+    def list_for_workflow(self, workflow_name: str, limit: int) -> list[WorkflowRun]:
+        matching = [r for r in self._runs.values() if r.workflow_name == workflow_name]
+        return sorted(matching, key=lambda r: r.id, reverse=True)[:limit]
+
 
 class InMemoryStageRunRepository:
     def __init__(self) -> None:

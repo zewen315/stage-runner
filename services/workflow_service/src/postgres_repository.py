@@ -166,6 +166,18 @@ class PostgresWorkflowRunRepository:
             row = cur.fetchone()
         return self._run_from_row(row) if row else None
 
+    def list_for_workflow(self, workflow_name: str, limit: int) -> list[WorkflowRun]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
+                       status, requested_at, started_at, finished_at, error
+                FROM runs WHERE workflow_name = %s ORDER BY id DESC LIMIT %s
+                """,
+                (workflow_name, limit),
+            )
+            return [self._run_from_row(row) for row in cur.fetchall()]
+
 
 class PostgresStageRunRepository:
     def __init__(self, dsn: str):

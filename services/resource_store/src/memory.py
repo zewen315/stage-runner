@@ -44,6 +44,9 @@ class InMemoryMetadataRepository:
         resource_id = self._resource_ids_by_name.get(name)
         return self._resources.get(resource_id) if resource_id is not None else None
 
+    def list_resources(self) -> list[Resource]:
+        return sorted(self._resources.values(), key=lambda r: r.name)
+
     def next_version(self, resource_id: int) -> int:
         existing = self._version_ids_by_resource[resource_id]
         return (max(existing) if existing else 0) + 1
@@ -71,6 +74,10 @@ class InMemoryMetadataRepository:
 
     def get_version_by_id(self, version_id: int) -> ResourceVersion | None:
         return self._versions.get(version_id)
+
+    def list_versions(self, resource_id: int) -> list[ResourceVersion]:
+        version_ids = self._version_ids_by_resource[resource_id]
+        return [self._versions[version_ids[v]] for v in sorted(version_ids)]
 
     def set_dependencies(self, version_id: int, depends_on_ids: list[int]) -> None:
         self._dependencies[version_id] = list(depends_on_ids)

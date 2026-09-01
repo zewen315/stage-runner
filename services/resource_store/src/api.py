@@ -128,6 +128,11 @@ def create_resource(
     return service.create_resource(body.name)
 
 
+@app.get("/resources", response_model=list[ResourceResponse])
+def list_resources(service: ResourceStoreService = Depends(get_service)):
+    return service.list_resources()
+
+
 @app.post("/resources/{name}/versions", response_model=ResourceVersionResponse, status_code=201)
 def upload_version(
     name: str, body: UploadVersionRequest, service: ResourceStoreService = Depends(get_service)
@@ -165,6 +170,11 @@ def get_version(name: str, version: int, service: ResourceStoreService = Depends
 @app.get("/resources/{name}/versions/{version}/dependencies", response_model=list[ResourceVersionResponse])
 def get_dependencies(name: str, version: int, service: ResourceStoreService = Depends(get_service)):
     return service.dependencies(name, version)
+
+
+@app.get("/resources/{name}/versions", response_model=list[ResourceVersionResponse])
+def list_versions(name: str, service: ResourceStoreService = Depends(get_service)):
+    return service.list_versions(name)
 
 
 @app.get("/healthz")

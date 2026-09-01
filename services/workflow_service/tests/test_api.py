@@ -141,6 +141,28 @@ def test_get_run_unknown_is_404(client):
     assert response.status_code == 404
 
 
+def test_list_workflows(client):
+    response = client.get("/workflows")
+
+    assert response.status_code == 200
+    assert response.json() == ["feed_ranking"]
+
+
+def test_list_runs_most_recent_first(client, workflow_runs):
+    workflow_runs.add(_workflow_run(id=1))
+    workflow_runs.add(_workflow_run(id=2))
+
+    response = client.get("/workflows/feed_ranking/runs")
+
+    assert response.status_code == 200
+    assert [r["id"] for r in response.json()] == [2, 1]
+
+
+def test_list_runs_unknown_workflow_is_404(client):
+    response = client.get("/workflows/does_not_exist/runs")
+    assert response.status_code == 404
+
+
 def test_list_stage_runs_for_run(client, workflow_runs, stage_runs):
     workflow_runs.add(_workflow_run(id=1))
     stage_runs.add(_stage_run(id=7, workflow_run_id=1, stage_name="raw_events", status=RunStatus.RUNNING))
