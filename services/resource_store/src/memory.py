@@ -1,7 +1,9 @@
-"""In-memory adapters for MetadataRepository and BlobStore.
+"""In-memory adapters for MetadataRepository, BlobStore, and
+ResourceValidatorLoader.
 
 Used by unit tests (and available for local scripting) so the domain logic
-in ResourceStoreService can be exercised without Postgres or MinIO running.
+in ResourceStoreService can be exercised without Postgres, MinIO, or a real
+resources/ directory on disk.
 """
 
 from __future__ import annotations
@@ -9,9 +11,9 @@ from __future__ import annotations
 import copy
 from collections import defaultdict
 from dataclasses import replace
-from typing import Any
+from typing import Any, Callable
 
-from errors import ResourceAlreadyExistsError
+from errors import ResourceAlreadyExistsError, ResourceValidationError
 from models import Resource, ResourceVersion
 
 
@@ -91,3 +93,19 @@ class InMemoryBlobStore:
 
     def get(self, storage_uri: str) -> Any:
         return copy.deepcopy(self._blobs[storage_uri])
+
+
+class InMemoryResourceValidatorLoader:
+    def __init__(self) -> None:
+        self._validators: dict[str, Callable[[Any], None]] = {}
+
+    def register(self, name: str, validate: Callable[[Any], None]) -> None:
+        """Test-seeding helper -- the real loader reads resources/<name>.py
+        from disk; tests register a validator directly instead."""
+        self._validators[name] = validate
+
+    def load(self, name: str) -> Callable[[Any], None]:
+        validate = self._validators.get(name)
+        if validate is None:
+            raise ResourceValidationError(f"resource {name!r} has no declared contract")
+        return validate

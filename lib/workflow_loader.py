@@ -1,5 +1,5 @@
 """Loads a workflow project (a directory under workflows/, e.g.
-workflows/feed_ranking/) as a real Python package, so its stage files can
+workflows/feed_success/) as a real Python package, so its stage files can
 use ordinary relative imports (`from .registry import registry`) to share
 one StageRegistry, instead of needing ad-hoc file-loading tricks.
 

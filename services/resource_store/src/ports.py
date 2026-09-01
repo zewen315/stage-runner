@@ -10,7 +10,7 @@ service.
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from models import Resource, ResourceVersion
 
@@ -49,3 +49,10 @@ class BlobStore(Protocol):
     def put(self, storage_uri: str, value: Any) -> None: ...
 
     def get(self, storage_uri: str) -> Any: ...
+
+
+class ResourceValidatorLoader(Protocol):
+    def load(self, name: str) -> Callable[[Any], None]:
+        """Raises ResourceValidationError if `name` has no declared
+        contract."""
+        ...

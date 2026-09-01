@@ -1,9 +1,15 @@
+import time
+
 from .registry import registry
 
 
 @registry.stage("score_items", depends_on=["aggregate_signals"])
 def score_items(aggregate_signals: dict) -> dict:
-    """Simple weighted score -- not a real model, just enough to rank."""
+    """Simulates a stage that runs far longer than expected -- sleeps 60s
+    against the rest of the workflow's 10s baseline. Stage Runner doesn't
+    enforce execution timeouts yet; this is the stage that would trip one
+    once that exists. For now, running this workflow just takes longer."""
+    time.sleep(60)
     scores = {}
     for item_id, signals in aggregate_signals.items():
         impressions = max(signals["impressions"], 1)

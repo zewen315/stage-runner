@@ -53,6 +53,9 @@ services:
       BLOB_ACCESS_KEY: stagerunner
       BLOB_SECRET_KEY: stagerunner123
       BLOB_BUCKET: resources
+      RESOURCES_ROOT: /resources
+    volumes:
+      - ./resources:/resources:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from api import app, get_service
 from client import ResourceStoreClient
-from memory import InMemoryBlobStore, InMemoryMetadataRepository
+from memory import InMemoryBlobStore, InMemoryMetadataRepository, InMemoryResourceValidatorLoader
 from scenario import Step, run
 from service import ResourceStoreService
 
@@ -20,7 +20,10 @@ def client():
     """A fresh service per test, injected via FastAPI's dependency override
     -- otherwise every test would share the app's module-level singleton
     and pollute each other's resource names."""
-    service = ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore())
+    validators = InMemoryResourceValidatorLoader()
+    for name in ("widget", "fetch", "transform", "dup"):
+        validators.register(name, lambda value: None)
+    service = ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore(), validators)
     app.dependency_overrides[get_service] = lambda: service
     yield ResourceStoreClient(TestClient(app))
     app.dependency_overrides.clear()
@@ -95,6 +98,15 @@ class TestErrorStatusCodes:
             [
                 Step("create_resource", ["fetch"]),
                 Step("promote", ["fetch", 99], expect=lambda r: r.status_code == 404),
+            ],
+        )
+
+    def test_undeclared_resource_upload_is_400(self, client):
+        run(
+            client,
+            [
+                Step("create_resource", ["undeclared"]),
+                Step("upload_version", ["undeclared", {"n": 1}], expect=lambda r: r.status_code == 400),
             ],
         )
 

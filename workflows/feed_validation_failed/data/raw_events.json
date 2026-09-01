@@ -1,0 +1,14 @@
+[
+  {"item_id": "post_1", "event": "impression"},
+  {"item_id": "post_1", "event": "impression"},
+  {"item_id": "post_1", "event": "click"},
+  {"item_id": "post_1", "event": "like"},
+  {"item_id": "post_2", "event": "impression"},
+  {"item_id": "post_2", "event": "impression"},
+  {"item_id": "post_2", "event": "impression"},
+  {"item_id": "post_3", "event": "impression"},
+  {"item_id": "post_3", "event": "click"},
+  {"item_id": "post_3", "event": "click"},
+  {"item_id": "post_3", "event": "like"},
+  {"item_id": "post_3", "event": "like"}
+]

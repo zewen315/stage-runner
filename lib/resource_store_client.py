@@ -49,6 +49,12 @@ class HttpResourceClient:
         response = self._http.post(
             f"/resources/{name}/versions", json={"value": value, "is_test": is_test}
         )
+        if response.status_code == 400:
+            # resource_store rejected this as a validation failure (no
+            # declared contract, or the value failed it) -- surface the
+            # actual reason, not just a generic HTTPStatusError, so it
+            # makes it all the way to the run's recorded error.
+            raise ValueError(response.json().get("detail", response.text))
         response.raise_for_status()
         return response.json()["version"]
 

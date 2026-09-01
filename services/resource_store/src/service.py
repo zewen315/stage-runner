@@ -1,8 +1,9 @@
-"""Domain logic for the resource store, trimmed to four core operations:
-create a resource, upload a version, record what a version depends on, and
-promote a version to current. Validation/status gating on versions has been
-deliberately dropped for now -- see AI_WORKFLOW.md / SYSTEM_DESIGN.md for
-why -- and can come back once these fundamentals are settled.
+"""Domain logic for the resource store: create a resource, upload a
+version, record what a version depends on, and promote a version to
+current -- gated by each resource's declared contract (see
+resources/<name>.py at the repo root, loaded via `validators`). A resource
+with no declared contract can't be uploaded to at all; see
+`ResourceValidatorLoader` in ports.py.
 """
 
 from __future__ import annotations
@@ -10,9 +11,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from errors import ResourceNotFoundError
+from errors import ResourceNotFoundError, ResourceValidationError
 from models import Resource, ResourceSnapshot, ResourceVersion
-from ports import BlobStore, MetadataRepository
+from ports import BlobStore, MetadataRepository, ResourceValidatorLoader
 
 
 def _utcnow() -> str:
@@ -24,9 +25,10 @@ def _storage_uri(name: str, version: int) -> str:
 
 
 class ResourceStoreService:
-    def __init__(self, metadata: MetadataRepository, blobs: BlobStore):
+    def __init__(self, metadata: MetadataRepository, blobs: BlobStore, validators: ResourceValidatorLoader):
         self._metadata = metadata
         self._blobs = blobs
+        self._validators = validators
 
     # -- the four core operations ------------------------------------
 
@@ -34,14 +36,25 @@ class ResourceStoreService:
         return self._metadata.create_resource(name)
 
     def upload_version(self, name: str, value: Any, is_test: bool = False) -> ResourceVersion:
-        """Write the value to blob storage, then record it as a new,
-        immutable version. The blob is written before the metadata row so a
-        failure between the two steps leaves an orphaned blob (harmless)
-        rather than a metadata row pointing at a blob that was never
-        written. Does not promote. `is_test` marks a version produced by a
-        standalone/ad-hoc StageRun rather than an orchestrated one, so
-        version history can tell real pipeline output from manual probes."""
+        """Validates against the resource's declared contract, then writes
+        the value to blob storage, then records it as a new, immutable
+        version. Validation happens before anything is written -- an
+        invalid value never becomes a version at all. The blob is written
+        before the metadata row so a failure between the two steps leaves
+        an orphaned blob (harmless) rather than a metadata row pointing at
+        a blob that was never written. Does not promote. `is_test` marks a
+        version produced by a standalone/ad-hoc StageRun rather than an
+        orchestrated one, so version history can tell real pipeline output
+        from manual probes."""
         resource = self._require_resource(name)
+        validate = self._validators.load(name)
+        try:
+            validate(value)
+        except ResourceValidationError:
+            raise
+        except Exception as exc:
+            raise ResourceValidationError(f"{name!r} failed validation: {exc}") from exc
+
         version_number = self._metadata.next_version(resource.id)
         storage_uri = _storage_uri(name, version_number)
         self._blobs.put(storage_uri, value)

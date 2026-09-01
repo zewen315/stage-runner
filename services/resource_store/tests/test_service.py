@@ -1,14 +1,24 @@
 import pytest
 
-from errors import ResourceAlreadyExistsError, ResourceNotFoundError
-from memory import InMemoryBlobStore, InMemoryMetadataRepository
+from errors import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceValidationError
+from memory import InMemoryBlobStore, InMemoryMetadataRepository, InMemoryResourceValidatorLoader
 from scenario import Step, run
 from service import ResourceStoreService
 
 
 @pytest.fixture
-def service():
-    return ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore())
+def validators():
+    loader = InMemoryResourceValidatorLoader()
+    # permissive by default -- these tests are about metadata/blob/promotion
+    # behavior, not validation itself (see TestUploadVersionValidation below)
+    loader.register("fetch", lambda value: None)
+    loader.register("transform", lambda value: None)
+    return loader
+
+
+@pytest.fixture
+def service(validators):
+    return ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore(), validators)
 
 
 class TestCreateResource:
@@ -67,6 +77,31 @@ class TestUploadVersion:
 
     def test_upload_to_unknown_resource_raises(self, service):
         run(service, [Step("upload_version", ["fetch", {"n": 1}], raises=ResourceNotFoundError)])
+
+
+class TestUploadVersionValidation:
+    def test_invalid_value_raises_and_nothing_is_persisted(self, service, validators):
+        validators.register("fetch", lambda value: (_ for _ in ()).throw(ValueError("bad shape")))
+        run(
+            service,
+            [
+                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}], raises=ResourceValidationError),
+            ],
+        )
+        # confirms the failed attempt never consumed a version number --
+        # nothing was actually persisted, not just "not promoted"
+        validators.register("fetch", lambda value: None)
+        run(service, [Step("upload_version", ["fetch", {"n": 1}], expect=lambda v: v.version == 1)])
+
+    def test_undeclared_resource_raises(self, service, validators):
+        run(
+            service,
+            [
+                Step("create_resource", ["undeclared"]),
+                Step("upload_version", ["undeclared", {"n": 1}], raises=ResourceValidationError),
+            ],
+        )
 
 
 class TestUpdateDependencies:

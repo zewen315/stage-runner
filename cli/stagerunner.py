@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run", help="Trigger a run, once")
-    run_parser.add_argument("workflow", help="workflow name, e.g. feed_ranking")
+    run_parser.add_argument("workflow", help="workflow name, e.g. feed_success")
     run_parser.add_argument(
         "--stage", metavar="NAME", help="run just this one stage (sugar for --start-from/--stop-after NAME)"
     )

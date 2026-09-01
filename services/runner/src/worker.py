@@ -42,6 +42,7 @@ def process_message(
     report: Report,
 ) -> None:
     stage_run_id = message["stage_run_id"]
+    workflow_run_id = message["workflow_run_id"]
     workflow_name = message["workflow_name"]
     stage_name = message["stage_name"]
     input_versions = message["input_versions"]
@@ -52,7 +53,10 @@ def process_message(
 
     try:
         workflow_dir = workflows_root / workflow_name
-        output_dir = output_root / workflow_name
+        # namespaced by run, not just workflow name -- otherwise every run
+        # of the same workflow (including a standalone/test one) would
+        # overwrite the previous run's export output
+        output_dir = output_root / workflow_name / str(workflow_run_id)
         registry = load_workflow(workflow_dir)
         stage_def = registry.get(stage_name)
         runner = Runner(resources, workflow_dir=workflow_dir, output_dir=output_dir)
