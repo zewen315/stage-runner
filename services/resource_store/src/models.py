@@ -6,9 +6,11 @@ from typing import Any
 
 @dataclass(frozen=True)
 class Resource:
-    """A registered resource -- the thing that has versions, identified by name."""
+    """A resource, identified by name -- its identity comes from code
+    (resources/<name>.py), not this row. `id` is None when the name is
+    declared but has never been uploaded to yet, so no DB row exists."""
 
-    id: int
+    id: int | None
     name: str
     current_version_id: int | None
 

@@ -6,9 +6,9 @@ quick local runs, and tests, which override get_service directly anyway).
 Validator loading is always the real, file-based one regardless of that --
 reading resources/<name>.py from disk isn't a "production only" concern,
 same reasoning workflow_service applies to its own workflows/ disk check.
-Domain exceptions (ResourceNotFoundError, ResourceAlreadyExistsError,
-ResourceValidationError) are translated to HTTP status codes here, at the
-boundary, so the service layer stays free of HTTP concerns.
+Domain exceptions (ResourceNotFoundError, ResourceValidationError) are
+translated to HTTP status codes here, at the boundary, so the service
+layer stays free of HTTP concerns.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-from errors import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceValidationError
+from errors import ResourceNotFoundError, ResourceValidationError
 from memory import InMemoryBlobStore, InMemoryMetadataRepository
 from service import ResourceStoreService
 from validator_loader import FileResourceValidatorLoader
@@ -62,11 +62,6 @@ async def handle_not_found(request: Request, exc: ResourceNotFoundError) -> JSON
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
-@app.exception_handler(ResourceAlreadyExistsError)
-async def handle_already_exists(request: Request, exc: ResourceAlreadyExistsError) -> JSONResponse:
-    return JSONResponse(status_code=409, content={"detail": str(exc)})
-
-
 @app.exception_handler(ResourceValidationError)
 async def handle_validation_error(request: Request, exc: ResourceValidationError) -> JSONResponse:
     return JSONResponse(status_code=400, content={"detail": str(exc)})
@@ -75,14 +70,10 @@ async def handle_validation_error(request: Request, exc: ResourceValidationError
 # -- request/response models --------------------------------------------
 
 
-class CreateResourceRequest(BaseModel):
-    name: str
-
-
 class ResourceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: int | None
     name: str
     current_version_id: int | None
 
@@ -119,13 +110,6 @@ class ResourceSnapshotResponse(BaseModel):
 
 
 # -- routes ---------------------------------------------------------------
-
-
-@app.post("/resources", response_model=ResourceResponse, status_code=201)
-def create_resource(
-    body: CreateResourceRequest, service: ResourceStoreService = Depends(get_service)
-):
-    return service.create_resource(body.name)
 
 
 @app.get("/resources", response_model=list[ResourceResponse])

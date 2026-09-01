@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import replace
 from typing import Any, Callable
 
-from errors import ResourceAlreadyExistsError, ResourceValidationError
+from errors import ResourceValidationError
 from models import Resource, ResourceVersion
 
 
@@ -29,9 +29,10 @@ class InMemoryMetadataRepository:
 
         self._dependencies: dict[int, list[int]] = {}
 
-    def create_resource(self, name: str) -> Resource:
-        if name in self._resource_ids_by_name:
-            raise ResourceAlreadyExistsError(f"resource {name!r} already exists")
+    def get_or_create_resource(self, name: str) -> Resource:
+        resource_id = self._resource_ids_by_name.get(name)
+        if resource_id is not None:
+            return self._resources[resource_id]
 
         resource_id = self._next_resource_id
         self._next_resource_id += 1
@@ -43,9 +44,6 @@ class InMemoryMetadataRepository:
     def get_resource(self, name: str) -> Resource | None:
         resource_id = self._resource_ids_by_name.get(name)
         return self._resources.get(resource_id) if resource_id is not None else None
-
-    def list_resources(self) -> list[Resource]:
-        return sorted(self._resources.values(), key=lambda r: r.name)
 
     def next_version(self, resource_id: int) -> int:
         existing = self._version_ids_by_resource[resource_id]
@@ -116,3 +114,6 @@ class InMemoryResourceValidatorLoader:
         if validate is None:
             raise ResourceValidationError(f"resource {name!r} has no declared contract")
         return validate
+
+    def list_names(self) -> list[str]:
+        return sorted(self._validators)

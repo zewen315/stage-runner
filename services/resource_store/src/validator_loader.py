@@ -43,3 +43,14 @@ class FileResourceValidatorLoader:
                 f"{self._resources_root / f'{name}.py'} has no `validate(value)` function"
             )
         return validate
+
+    def list_names(self) -> list[str]:
+        """Every declared resource -- the code-side registry of valid
+        names, the same role workflows/*/ plays for WorkflowService.list_workflows()."""
+        if not self._resources_root.is_dir():
+            return []
+        return sorted(
+            path.stem
+            for path in self._resources_root.glob("*.py")
+            if not path.stem.startswith(("_", "."))
+        )

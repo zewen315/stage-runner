@@ -16,13 +16,14 @@ from models import Resource, ResourceVersion
 
 
 class MetadataRepository(Protocol):
-    def create_resource(self, name: str) -> Resource:
-        """Raises ResourceAlreadyExistsError if `name` is already taken."""
+    def get_or_create_resource(self, name: str) -> Resource:
+        """Idempotent -- returns the existing row for `name`, or creates
+        one (with no current version yet) if this is its first ever
+        upload. Resource identity itself comes from code (resources/<name>.py,
+        see ResourceValidatorLoader below); this just tracks instances."""
         ...
 
     def get_resource(self, name: str) -> Resource | None: ...
-
-    def list_resources(self) -> list[Resource]: ...
 
     def next_version(self, resource_id: int) -> int: ...
 
@@ -61,4 +62,9 @@ class ResourceValidatorLoader(Protocol):
     def load(self, name: str) -> Callable[[Any], None]:
         """Raises ResourceValidationError if `name` has no declared
         contract."""
+        ...
+
+    def list_names(self) -> list[str]:
+        """Every declared resource name -- the source of truth for what
+        resources exist at all, sorted."""
         ...

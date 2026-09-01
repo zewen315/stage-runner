@@ -77,7 +77,6 @@ class Runner:
     def _run_import(self, stage_def: StageDef, promote: bool, is_test: bool) -> int:
         input_path = self._resolve(stage_def.path, self._workflow_dir)
         value = json.loads(input_path.read_text())
-        self._resources.create_resource_if_missing(stage_def.name)
         version = self._resources.upload_version(stage_def.name, value, is_test=is_test)
         if promote:
             self._resources.promote(stage_def.name, version)
@@ -103,7 +102,6 @@ class Runner:
         workflow_name = self._workflow_dir.name if self._workflow_dir else None
         result = self._executor.run(stage_def, inputs, workflow_name=workflow_name)
 
-        self._resources.create_resource_if_missing(stage_def.name)
         version = self._resources.upload_version(stage_def.name, result, is_test=is_test)
         self._resources.update_dependencies(stage_def.name, version, dep_versions)
         if promote:

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import psycopg
 
-from errors import ResourceAlreadyExistsError, ResourceNotFoundError
 from models import Resource, ResourceVersion
 
 _SCHEMA = """
@@ -56,17 +55,20 @@ class PostgresMetadataRepository:
         with self._conn.cursor() as cur:
             cur.execute(_SCHEMA)
 
-    def create_resource(self, name: str) -> Resource:
-        try:
-            with self._conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO resources (name) VALUES (%s) RETURNING id, name, current_version_id",
-                    (name,),
-                )
-                row = cur.fetchone()
-        except psycopg.errors.UniqueViolation as exc:
-            raise ResourceAlreadyExistsError(f"resource {name!r} already exists") from exc
-
+    def get_or_create_resource(self, name: str) -> Resource:
+        """Upsert-and-return, atomic and race-safe: the no-op DO UPDATE
+        makes RETURNING reflect the existing row on a conflict instead of
+        needing a separate SELECT or catching a UniqueViolation."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO resources (name) VALUES (%s)
+                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id, name, current_version_id
+                """,
+                (name,),
+            )
+            row = cur.fetchone()
         return Resource(id=row[0], name=row[1], current_version_id=row[2])
 
     def get_resource(self, name: str) -> Resource | None:
@@ -76,11 +78,6 @@ class PostgresMetadataRepository:
             )
             row = cur.fetchone()
         return Resource(id=row[0], name=row[1], current_version_id=row[2]) if row else None
-
-    def list_resources(self) -> list[Resource]:
-        with self._conn.cursor() as cur:
-            cur.execute("SELECT id, name, current_version_id FROM resources ORDER BY name")
-            return [Resource(id=row[0], name=row[1], current_version_id=row[2]) for row in cur.fetchall()]
 
     def next_version(self, resource_id: int) -> int:
         with self._conn.cursor() as cur:

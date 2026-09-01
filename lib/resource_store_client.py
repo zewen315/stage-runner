@@ -16,8 +16,6 @@ import httpx
 
 
 class ResourceClient(Protocol):
-    def create_resource_if_missing(self, name: str) -> None: ...
-
     def upload_version(self, name: str, value: Any, is_test: bool = False) -> int:
         """Returns the new version number. Doesn't make it current -- call
         `promote` separately for that."""
@@ -39,11 +37,6 @@ class ResourceClient(Protocol):
 class HttpResourceClient:
     def __init__(self, base_url: str):
         self._http = httpx.Client(base_url=base_url)
-
-    def create_resource_if_missing(self, name: str) -> None:
-        response = self._http.post("/resources", json={"name": name})
-        if response.status_code not in (201, 409):
-            response.raise_for_status()
 
     def upload_version(self, name: str, value: Any, is_test: bool = False) -> int:
         response = self._http.post(
@@ -94,9 +87,6 @@ class InMemoryResourceClient:
         self._next_version: dict[str, int] = {}
         self.dependencies_recorded: dict[tuple[str, int], list[tuple[str, int]]] = {}
         self.is_test_by_version: dict[tuple[str, int], bool] = {}
-
-    def create_resource_if_missing(self, name: str) -> None:
-        self._next_version.setdefault(name, 1)
 
     def upload_version(self, name: str, value: Any, is_test: bool = False) -> int:
         version = self._next_version.get(name, 1)

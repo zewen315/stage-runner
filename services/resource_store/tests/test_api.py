@@ -21,7 +21,7 @@ def client():
     -- otherwise every test would share the app's module-level singleton
     and pollute each other's resource names."""
     validators = InMemoryResourceValidatorLoader()
-    for name in ("widget", "fetch", "transform", "dup"):
+    for name in ("widget", "fetch", "transform"):
         validators.register(name, lambda value: None)
     service = ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore(), validators)
     app.dependency_overrides[get_service] = lambda: service
@@ -30,11 +30,10 @@ def client():
 
 
 class TestHappyPath:
-    def test_create_upload_promote_and_read(self, client):
+    def test_upload_promote_and_read(self, client):
         results = run(
             client,
             [
-                Step("create_resource", ["widget"], expect=lambda r: r.status_code == 201),
                 Step(
                     "upload_version",
                     ["widget", {"n": 1}],
@@ -55,8 +54,6 @@ class TestHappyPath:
         results = run(
             client,
             [
-                Step("create_resource", ["fetch"]),
-                Step("create_resource", ["transform"]),
                 Step("upload_version", ["fetch", {"n": 1}], name="upstream"),
                 Step("upload_version", ["transform", {"n": 2}], name="downstream"),
                 Step(
@@ -83,48 +80,32 @@ class TestErrorStatusCodes:
     def test_unknown_resource_is_404(self, client):
         run(client, [Step("get", ["missing"], expect=lambda r: r.status_code == 404)])
 
-    def test_duplicate_resource_is_409(self, client):
-        run(
-            client,
-            [
-                Step("create_resource", ["dup"]),
-                Step("create_resource", ["dup"], expect=lambda r: r.status_code == 409),
-            ],
-        )
-
     def test_promote_unknown_version_is_404(self, client):
         run(
             client,
             [
-                Step("create_resource", ["fetch"]),
+                Step("upload_version", ["fetch", {"n": 1}]),
                 Step("promote", ["fetch", 99], expect=lambda r: r.status_code == 404),
             ],
         )
 
     def test_undeclared_resource_upload_is_400(self, client):
-        run(
-            client,
-            [
-                Step("create_resource", ["undeclared"]),
-                Step("upload_version", ["undeclared", {"n": 1}], expect=lambda r: r.status_code == 400),
-            ],
-        )
+        run(client, [Step("upload_version", ["undeclared", {"n": 1}], expect=lambda r: r.status_code == 400)])
 
 
 class TestListRoutes:
     def test_list_resources(self, client):
-        run(client, [Step("create_resource", ["fetch"])])
-
+        """Every declared resource, regardless of whether anything's been
+        uploaded to it -- the fixture declares three, none uploaded yet."""
         response = client.list_resources()
 
         assert response.status_code == 200
-        assert [r["name"] for r in response.json()] == ["fetch"]
+        assert [r["name"] for r in response.json()] == ["fetch", "transform", "widget"]
 
     def test_list_versions(self, client):
         run(
             client,
             [
-                Step("create_resource", ["fetch"]),
                 Step("upload_version", ["fetch", {"n": 1}]),
                 Step("upload_version", ["fetch", {"n": 2}]),
             ],

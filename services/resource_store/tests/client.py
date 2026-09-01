@@ -16,9 +16,6 @@ class ResourceStoreClient:
     def __init__(self, http: httpx.Client):
         self._http = http
 
-    def create_resource(self, name: str) -> httpx.Response:
-        return self._http.post("/resources", json={"name": name})
-
     def upload_version(self, name: str, value: Any) -> httpx.Response:
         return self._http.post(f"/resources/{name}/versions", json={"value": value})
 
