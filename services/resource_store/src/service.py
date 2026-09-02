@@ -1,12 +1,14 @@
 """Domain logic for the resource store: upload a version, record what a
-version depends on, and promote a version to current -- gated by each
-resource's declared contract (see resources/<name>.py at the repo root,
-loaded via `validators`). A resource with no declared contract can't be
-uploaded to at all; see `ResourceValidatorLoader` in ports.py. There's no
-separate "create a resource" step -- a resource's identity comes entirely
-from its resources/<name>.py file, the same way a workflow's identity
-comes from its workflows/<name>/ directory; the DB only starts tracking a
-name once something is actually uploaded to it.
+version depends on, and promote a version to current -- checked against
+each resource's declared contract (see resources/<name>.py at the repo
+root, loaded via `validators`). A resource with no declared contract
+can't be uploaded to at all; see `ResourceValidatorLoader` in ports.py.
+A value that fails its contract is still persisted (see
+`upload_version`), not rejected outright -- only "no contract exists"
+is. There's no separate "create a resource" step -- a resource's
+identity comes entirely from its resources/<name>.py file, the same way
+a workflow's identity comes from its workflows/<name>/ directory; the DB
+only starts tracking a name once something is actually uploaded to it.
 """
 
 from __future__ import annotations
@@ -38,34 +40,47 @@ class ResourceStoreService:
     def upload_version(self, name: str, value: Any, is_test: bool = False) -> ResourceVersion:
         """Validates against the resource's declared contract, then writes
         the value to blob storage, then records it as a new, immutable
-        version. Validation happens before anything is written -- an
-        invalid value never becomes a version at all, and no DB row gets
-        created for a name that isn't actually declared in code. The blob
-        is written before the metadata row so a failure between the two
-        steps leaves an orphaned blob (harmless) rather than a metadata row
-        pointing at a blob that was never written. Does not promote.
-        `is_test` marks a version produced by a standalone/ad-hoc StageRun
-        rather than an orchestrated one, so version history can tell real
-        pipeline output from manual probes."""
+        version -- always, whether or not it passed. A resource with no
+        declared contract at all can't be uploaded to (that's not
+        recoverable, there's no schema to record a result against); no DB
+        row gets created for a name that isn't declared in code. But once
+        there IS a contract, a value that fails it is still persisted,
+        with the reason recorded on the version as `validation_error`, and
+        `ResourceValidationError` is still raised afterward -- callers that
+        depend on a hard failure (the Runner reporting a stage failed, so
+        the Scheduler's halt/fallback policy still applies) see the exact
+        same outcome as before; the only change is the bad value no longer
+        just vanishes into an error message. The blob is written before
+        the metadata row so a failure between the two steps leaves an
+        orphaned blob (harmless) rather than a metadata row pointing at a
+        blob that was never written. Never promotes. `is_test` marks a
+        version produced by a standalone/ad-hoc StageRun rather than an
+        orchestrated one, so version history can tell real pipeline output
+        from manual probes."""
         validate = self._validators.load(name)
+
+        validation_error: str | None = None
         try:
             validate(value)
-        except ResourceValidationError:
-            raise
         except Exception as exc:
-            raise ResourceValidationError(f"{name!r} failed validation: {exc}") from exc
+            validation_error = str(exc) if isinstance(exc, ResourceValidationError) else f"{name!r} failed validation: {exc}"
 
         resource = self._metadata.get_or_create_resource(name)
         version_number = self._metadata.next_version(resource.id)
         storage_uri = _storage_uri(name, version_number)
         self._blobs.put(storage_uri, value)
-        return self._metadata.record_version(
+        record = self._metadata.record_version(
             resource_id=resource.id,
             version=version_number,
             storage_uri=storage_uri,
             created_at=_utcnow(),
             is_test=is_test,
+            validation_error=validation_error,
         )
+
+        if validation_error is not None:
+            raise ResourceValidationError(validation_error)
+        return record
 
     def update_dependencies(self, name: str, version: int, depends_on: list[tuple[str, int]]) -> None:
         """Replace the full set of direct dependencies for (name, version)

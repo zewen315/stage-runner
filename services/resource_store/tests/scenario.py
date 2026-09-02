@@ -46,7 +46,7 @@ def run(service, steps: list[Step]) -> dict:
 
         result = method(*args, **kwargs)
         if step.expect is not None:
-            step.expect(result)
+            assert step.expect(result), f"expect failed for {step.op}({args!r}, {kwargs!r}) -> {result!r}"
         if step.name is not None:
             results[step.name] = result
 

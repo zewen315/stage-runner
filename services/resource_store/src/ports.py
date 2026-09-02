@@ -28,8 +28,17 @@ class MetadataRepository(Protocol):
     def next_version(self, resource_id: int) -> int: ...
 
     def record_version(
-        self, resource_id: int, version: int, storage_uri: str, created_at: str, is_test: bool = False
-    ) -> ResourceVersion: ...
+        self,
+        resource_id: int,
+        version: int,
+        storage_uri: str,
+        created_at: str,
+        is_test: bool = False,
+        validation_error: str | None = None,
+    ) -> ResourceVersion:
+        """The returned ResourceVersion.name is resolved from resource_id
+        -- resource_versions itself only ever stores the id."""
+        ...
 
     def get_version(self, resource_id: int, version: int) -> ResourceVersion | None: ...
 

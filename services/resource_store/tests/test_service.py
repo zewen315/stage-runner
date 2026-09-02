@@ -55,15 +55,36 @@ class TestUploadVersion:
 
 
 class TestUploadVersionValidation:
-    def test_invalid_value_raises_and_nothing_is_persisted(self, service, validators):
+    def test_invalid_value_still_persists_with_the_error_recorded(self, service, validators):
         validators.register("fetch", lambda value: (_ for _ in ()).throw(ValueError("bad shape")))
         run(service, [Step("upload_version", ["fetch", {"n": 1}], raises=ResourceValidationError)])
-        # confirms the failed attempt never consumed a version number --
-        # nothing was actually persisted, not just "not promoted"
+
+        versions = service.list_versions("fetch")
+        assert len(versions) == 1
+        assert versions[0].version == 1
+        assert "bad shape" in versions[0].validation_error
+
+        # confirms the failed attempt still consumed version 1 -- the next
+        # (now valid) upload is version 2, not a reused 1
         validators.register("fetch", lambda value: None)
-        run(service, [Step("upload_version", ["fetch", {"n": 1}], expect=lambda v: v.version == 1)])
+        run(service, [Step("upload_version", ["fetch", {"n": 1}], expect=lambda v: v.version == 2)])
+
+    def test_valid_value_records_no_validation_error(self, service):
+        run(
+            service,
+            [
+                Step(
+                    "upload_version",
+                    ["fetch", {"n": 1}],
+                    expect=lambda v: v.validation_error is None,
+                )
+            ],
+        )
 
     def test_undeclared_resource_raises(self, service):
+        """Unlike a declared-but-failing value, there's no contract to
+        record a result against at all -- this is the one case that still
+        can't persist anything."""
         run(service, [Step("upload_version", ["undeclared", {"n": 1}], raises=ResourceValidationError)])
 
 

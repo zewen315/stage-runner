@@ -16,13 +16,18 @@ from service import ResourceStoreService
 
 
 @pytest.fixture
-def client():
+def validators():
+    loader = InMemoryResourceValidatorLoader()
+    for name in ("widget", "fetch", "transform"):
+        loader.register(name, lambda value: None)
+    return loader
+
+
+@pytest.fixture
+def client(validators):
     """A fresh service per test, injected via FastAPI's dependency override
     -- otherwise every test would share the app's module-level singleton
     and pollute each other's resource names."""
-    validators = InMemoryResourceValidatorLoader()
-    for name in ("widget", "fetch", "transform"):
-        validators.register(name, lambda value: None)
     service = ResourceStoreService(InMemoryMetadataRepository(), InMemoryBlobStore(), validators)
     app.dependency_overrides[get_service] = lambda: service
     yield ResourceStoreClient(TestClient(app))
@@ -91,6 +96,17 @@ class TestErrorStatusCodes:
 
     def test_undeclared_resource_upload_is_400(self, client):
         run(client, [Step("upload_version", ["undeclared", {"n": 1}], expect=lambda r: r.status_code == 400)])
+
+    def test_value_failing_a_declared_contract_is_400_but_still_persists(self, client, validators):
+        validators.register("fetch", lambda value: (_ for _ in ()).throw(ValueError("bad shape")))
+
+        run(client, [Step("upload_version", ["fetch", {"n": 1}], expect=lambda r: r.status_code == 400)])
+
+        response = client.list_versions("fetch")
+        assert response.status_code == 200
+        [version] = response.json()
+        assert version["version"] == 1
+        assert "bad shape" in version["validation_error"]
 
 
 class TestListRoutes:

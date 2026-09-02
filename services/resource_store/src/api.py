@@ -88,10 +88,12 @@ class ResourceVersionResponse(BaseModel):
 
     id: int
     resource_id: int
+    name: str
     version: int
     storage_uri: str
     created_at: str
     is_test: bool
+    validation_error: str | None
 
 
 class UpdateDependenciesRequest(BaseModel):

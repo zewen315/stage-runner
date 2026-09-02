@@ -17,14 +17,21 @@ class Resource:
 
 @dataclass(frozen=True)
 class ResourceVersion:
-    """Metadata for one immutable, append-only version of a resource."""
+    """Metadata for one immutable, append-only version of a resource.
+    `validation_error` is None if the value passed its resource's declared
+    contract at upload time, otherwise the reason it didn't -- recorded,
+    not rejected: the version is persisted either way (see
+    ResourceStoreService.upload_version), so a bad value stays inspectable
+    instead of just an error message nobody kept."""
 
     id: int
     resource_id: int
+    name: str
     version: int
     storage_uri: str
     created_at: str
     is_test: bool
+    validation_error: str | None
 
 
 @dataclass(frozen=True)

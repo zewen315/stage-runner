@@ -26,12 +26,16 @@ CREATE TABLE IF NOT EXISTS resources (
 );
 
 CREATE TABLE IF NOT EXISTS resource_versions (
-    id           BIGSERIAL PRIMARY KEY,
-    resource_id  BIGINT NOT NULL REFERENCES resources (id),
-    version      INTEGER NOT NULL CHECK (version > 0),
-    storage_uri  TEXT NOT NULL,
-    created_at   TIMESTAMPTZ NOT NULL,
-    is_test      BOOLEAN NOT NULL DEFAULT false,
+    id                BIGSERIAL PRIMARY KEY,
+    resource_id       BIGINT NOT NULL REFERENCES resources (id),
+    version           INTEGER NOT NULL CHECK (version > 0),
+    storage_uri       TEXT NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL,
+    is_test           BOOLEAN NOT NULL DEFAULT false,
+    -- NULL means it passed its resource's declared contract at upload
+    -- time; otherwise the reason it didn't. The value is still persisted
+    -- either way -- see ResourceStoreService.upload_version.
+    validation_error  TEXT,
     UNIQUE (resource_id, version)
 );
 
@@ -87,36 +91,42 @@ class PostgresMetadataRepository:
             )
             return cur.fetchone()[0]
 
+    # resource_versions itself only stores resource_id -- joined here so
+    # every ResourceVersion comes back self-describing (.name), matching
+    # InMemoryMetadataRepository (which just reads it off its own
+    # in-memory Resource).
+    _VERSION_SELECT = """
+        SELECT rv.id, rv.resource_id, r.name, rv.version, rv.storage_uri, rv.created_at,
+               rv.is_test, rv.validation_error
+        FROM resource_versions rv JOIN resources r ON r.id = rv.resource_id
+    """
+
     def record_version(
-        self, resource_id: int, version: int, storage_uri: str, created_at: str, is_test: bool = False
+        self,
+        resource_id: int,
+        version: int,
+        storage_uri: str,
+        created_at: str,
+        is_test: bool = False,
+        validation_error: str | None = None,
     ) -> ResourceVersion:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO resource_versions (resource_id, version, storage_uri, created_at, is_test)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO resource_versions
+                    (resource_id, version, storage_uri, created_at, is_test, validation_error)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (resource_id, version, storage_uri, created_at, is_test),
+                (resource_id, version, storage_uri, created_at, is_test, validation_error),
             )
             version_id = cur.fetchone()[0]
-
-        return ResourceVersion(
-            id=version_id,
-            resource_id=resource_id,
-            version=version,
-            storage_uri=storage_uri,
-            created_at=created_at,
-            is_test=is_test,
-        )
+        return self.get_version_by_id(version_id)
 
     def get_version(self, resource_id: int, version: int) -> ResourceVersion | None:
         with self._conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, resource_id, version, storage_uri, created_at, is_test
-                FROM resource_versions WHERE resource_id = %s AND version = %s
-                """,
+                f"{self._VERSION_SELECT} WHERE rv.resource_id = %s AND rv.version = %s",
                 (resource_id, version),
             )
             row = cur.fetchone()
@@ -124,25 +134,13 @@ class PostgresMetadataRepository:
 
     def get_version_by_id(self, version_id: int) -> ResourceVersion | None:
         with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, resource_id, version, storage_uri, created_at, is_test
-                FROM resource_versions WHERE id = %s
-                """,
-                (version_id,),
-            )
+            cur.execute(f"{self._VERSION_SELECT} WHERE rv.id = %s", (version_id,))
             row = cur.fetchone()
         return self._version_from_row(row) if row else None
 
     def list_versions(self, resource_id: int) -> list[ResourceVersion]:
         with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, resource_id, version, storage_uri, created_at, is_test
-                FROM resource_versions WHERE resource_id = %s ORDER BY version
-                """,
-                (resource_id,),
-            )
+            cur.execute(f"{self._VERSION_SELECT} WHERE rv.resource_id = %s ORDER BY rv.version", (resource_id,))
             return [self._version_from_row(row) for row in cur.fetchall()]
 
     @staticmethod
@@ -150,10 +148,12 @@ class PostgresMetadataRepository:
         return ResourceVersion(
             id=row[0],
             resource_id=row[1],
-            version=row[2],
-            storage_uri=row[3],
-            created_at=row[4].isoformat(),
-            is_test=row[5],
+            name=row[2],
+            version=row[3],
+            storage_uri=row[4],
+            created_at=row[5].isoformat(),
+            is_test=row[6],
+            validation_error=row[7],
         )
 
     def set_dependencies(self, version_id: int, depends_on_ids: list[int]) -> None:
