@@ -51,7 +51,9 @@ export default function RecurringScheduleDetail() {
 
       <div className="run-header">
         <div>
-          <span className="workflow-pill">{recurring.workflow_name}</span>
+          <Link to={`/workflows/${recurring.workflow_name}`} className="workflow-pill">
+            {recurring.workflow_name}
+          </Link>
           <h1>Recurring schedule #{recurring.id}</h1>
         </div>
         <span className={`status status-lg status-${recurring.enabled ? 'requested' : 'cancelled'}`}>

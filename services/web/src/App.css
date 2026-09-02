@@ -416,6 +416,7 @@ a.run-card:hover {
   font-weight: 600;
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
+  text-decoration: none;
 }
 
 /* -- status badges ------------------------------------------------- */

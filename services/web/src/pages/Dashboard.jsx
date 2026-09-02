@@ -74,7 +74,12 @@ export default function Dashboard() {
           <EmptyState text="No runs waiting to start." />
         ) : (
           scheduled.map((item) =>
-            item.cron_expression ? (
+            // Recurring schedules always carry next_run_at; one-time
+            // schedules never do. cron_expression alone doesn't work as
+            // the discriminator -- it's null for an interval-based
+            // recurring schedule too, which would otherwise misrender it
+            // as (and link it to) an unrelated one-time schedule.
+            item.next_run_at != null ? (
               <RecurringScheduleCard key={`recurring-${item.id}`} schedule={item} />
             ) : (
               <ScheduleCard key={`once-${item.id}`} schedule={item} />

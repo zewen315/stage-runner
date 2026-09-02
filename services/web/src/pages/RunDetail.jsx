@@ -76,7 +76,9 @@ export default function RunDetail() {
 
       <div className="run-header">
         <div>
-          <span className="workflow-pill">{run.workflow_name}</span>
+          <Link to={`/workflows/${run.workflow_name}`} className="workflow-pill">
+            {run.workflow_name}
+          </Link>
           <h1>Run #{run.id}</h1>
         </div>
         <div className="run-header-actions">

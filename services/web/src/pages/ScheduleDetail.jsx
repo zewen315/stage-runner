@@ -43,7 +43,9 @@ export default function ScheduleDetail() {
 
       <div className="run-header">
         <div>
-          <span className="workflow-pill">{schedule.workflow_name}</span>
+          <Link to={`/workflows/${schedule.workflow_name}`} className="workflow-pill">
+            {schedule.workflow_name}
+          </Link>
           <h1>Schedule #{schedule.id}</h1>
         </div>
         <span className={`status status-lg status-${schedule.status}`}>{schedule.status}</span>
