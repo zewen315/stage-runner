@@ -11,7 +11,7 @@ only the other way around.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from croniter import CroniterBadCronError, croniter
@@ -22,6 +22,7 @@ from workflow_loader import load_workflow
 from errors import (
     InvalidCronExpressionError,
     InvalidOnFailureError,
+    InvalidRecurrenceError,
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
@@ -42,6 +43,23 @@ def _utcnow() -> str:
 def _validate_on_failure(on_failure: str | None) -> None:
     if on_failure is not None and on_failure not in _VALID_ON_FAILURE:
         raise InvalidOnFailureError(f"on_failure must be one of {sorted(_VALID_ON_FAILURE)}, got {on_failure!r}")
+
+
+def _compute_next_run_at(cron_expression: str | None, interval_seconds: int | None) -> str:
+    if (cron_expression is None) == (interval_seconds is None):
+        raise InvalidRecurrenceError(
+            "exactly one of cron_expression/interval_seconds must be set, got "
+            f"cron_expression={cron_expression!r}, interval_seconds={interval_seconds!r}"
+        )
+    now = datetime.now(timezone.utc)
+    if cron_expression is not None:
+        try:
+            return croniter(cron_expression, now).get_next(datetime).isoformat()
+        except CroniterBadCronError as exc:
+            raise InvalidCronExpressionError(f"invalid cron expression {cron_expression!r}: {exc}") from exc
+    if interval_seconds <= 0:
+        raise InvalidRecurrenceError(f"interval_seconds must be a positive integer, got {interval_seconds!r}")
+    return (now + timedelta(seconds=interval_seconds)).isoformat()
 
 
 class WorkflowService:
@@ -186,33 +204,35 @@ class WorkflowService:
     def create_recurring_schedule(
         self,
         workflow_name: str,
-        cron_expression: str,
+        cron_expression: str | None = None,
+        interval_seconds: int | None = None,
         start_from: str | None = None,
         stop_after: str | None = None,
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
         on_failure: str | None = None,
     ) -> RecurringSchedule:
-        """Client-facing: register a standing rule. Computes the first
-        next_run_at from `cron_expression` relative to now -- the
-        Scheduler is the one that actually fires it and keeps advancing
-        next_run_at after that, on its own poll cycle, the same way it
-        alone dispatches `schedules`."""
+        """Client-facing: register a standing rule, on either a standard
+        cron cadence or a fixed "every N seconds" one (cron's own
+        resolution bottoms out at a minute, too coarse to usefully demo
+        recurrence live) -- exactly one of the two must be given. Computes
+        the first next_run_at relative to now; the Scheduler is the one
+        that actually fires it and keeps advancing next_run_at after that,
+        on its own poll cycle, the same way it alone dispatches
+        `schedules`."""
         self._require_workflow(workflow_name)
         _validate_on_failure(on_failure)
-        try:
-            next_run_at = croniter(cron_expression, datetime.now(timezone.utc)).get_next(datetime).isoformat()
-        except CroniterBadCronError as exc:
-            raise InvalidCronExpressionError(f"invalid cron expression {cron_expression!r}: {exc}") from exc
+        next_run_at = _compute_next_run_at(cron_expression, interval_seconds)
         return self._recurring_schedules.create(
             workflow_name,
-            cron_expression,
             start_from,
             stop_after,
             input_versions,
             promote,
             next_run_at=next_run_at,
             created_at=_utcnow(),
+            cron_expression=cron_expression,
+            interval_seconds=interval_seconds,
             on_failure=on_failure,
         )
 

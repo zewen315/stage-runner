@@ -23,11 +23,13 @@ class DueRecurringSchedule:
 
     id: int
     workflow_name: str
-    cron_expression: str
     start_from: str | None
     stop_after: str | None
     input_versions: dict[str, int] | None
     promote: bool | None
+    cron_expression: str | None = None
+    interval_seconds: int | None = None
+    """Exactly one is set -- see workflow_service's RecurringSchedule."""
     on_failure: str | None = None
 
 

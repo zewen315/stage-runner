@@ -153,7 +153,9 @@ function RecurringScheduleCard({ schedule }) {
         <span className="status status-requested">recurring</span>
       </div>
       <div className="run-card-meta">
-        <span className="mono">{schedule.cron_expression}</span>
+        <span className="mono">
+          {schedule.cron_expression != null ? schedule.cron_expression : `every ${schedule.interval_seconds}s`}
+        </span>
         {schedule.start_from && <span>from {schedule.start_from}</span>}
         {schedule.stop_after && <span>to {schedule.stop_after}</span>}
       </div>

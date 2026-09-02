@@ -5,8 +5,12 @@ Three phases, all re-run every tick:
   next_run_at has arrived, spawn a plain WorkflowRun with that row's
   defaults (exactly like a one-off Schedule's own intake below -- the
   rule itself never runs, it just mints instances) and advance
-  next_run_at to the next cron occurrence. A `recurring_schedules` row
-  never touches `schedules` at all; it goes straight to a WorkflowRun.
+  next_run_at to the next occurrence -- via croniter if the row declares
+  `cron_expression`, or `now + interval_seconds` if it declares
+  `interval_seconds` instead (exactly one of the two is ever set; the
+  latter exists because cron's own resolution bottoms out at a minute,
+  too coarse to usefully demo recurrence live). A `recurring_schedules`
+  row never touches `schedules` at all; it goes straight to a WorkflowRun.
 - intake: drain undispatched `schedules` into a `WorkflowRun` (never
   queued, pure tracking). `promote` resolves here if the caller didn't
   specify one: true only for a full run (`start_from` and `stop_after`
@@ -57,7 +61,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -91,7 +95,10 @@ def _intake_recurring(store: ScheduleStore) -> None:
             promote,
             on_failure=recurring.on_failure,
         )
-        next_run_at = croniter(recurring.cron_expression, now).get_next(datetime).isoformat()
+        if recurring.cron_expression is not None:
+            next_run_at = croniter(recurring.cron_expression, now).get_next(datetime).isoformat()
+        else:
+            next_run_at = (now + timedelta(seconds=recurring.interval_seconds)).isoformat()
         store.advance_recurring_schedule(recurring.id, next_run_at)
 
 

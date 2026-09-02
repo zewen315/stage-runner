@@ -48,19 +48,23 @@ class InMemoryScheduleStore:
     def add_recurring_schedule(
         self,
         workflow_name: str,
-        cron_expression: str = "* * * * *",
+        cron_expression: str | None = "* * * * *",
         start_from: str | None = None,
         stop_after: str | None = None,
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
         next_run_at: str | None = None,
         enabled: bool = True,
+        interval_seconds: int | None = None,
         on_failure: str | None = None,
     ) -> int:
+        if interval_seconds is not None:
+            cron_expression = None
         recurring_schedule_id = self._next_recurring_schedule_id
         self._recurring_schedules[recurring_schedule_id] = {
             "workflow_name": workflow_name,
             "cron_expression": cron_expression,
+            "interval_seconds": interval_seconds,
             "start_from": start_from,
             "stop_after": stop_after,
             "input_versions": input_versions,
@@ -162,6 +166,7 @@ class InMemoryScheduleStore:
                 id=rid,
                 workflow_name=r["workflow_name"],
                 cron_expression=r["cron_expression"],
+                interval_seconds=r["interval_seconds"],
                 start_from=r["start_from"],
                 stop_after=r["stop_after"],
                 input_versions=r["input_versions"],

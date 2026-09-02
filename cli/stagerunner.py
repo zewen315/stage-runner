@@ -7,7 +7,8 @@
   uv run python cli/stagerunner.py resource upload <name> <file>
       [--promote | --no-promote] [--base-url URL]
 
-  uv run python cli/stagerunner.py recurring create <workflow-name> --cron "<expr>"
+  uv run python cli/stagerunner.py recurring create <workflow-name>
+      {--cron "<expr>" | --interval-seconds N}
       [--stage NAME | --start-from NAME] [--stop-after NAME]
       [--input <resource>=<version> ...] [--promote]
       [--on-failure {halt,fallback}] [--base-url URL]
@@ -46,10 +47,12 @@ stage's input and output is a resource, so there's no other way in. Reads
 current.
 
 `recurring create` registers a standing rule instead of triggering once --
-the Scheduler fires it on `--cron`'s cadence (standard 5-field cron syntax),
-each firing a plain run with the flags given here. `recurring cancel`
-disables it (kept, not deleted, so `recurring list` still shows its
-history).
+the Scheduler fires it on either `--cron`'s cadence (standard 5-field cron
+syntax) or `--interval-seconds`' cadence (exactly one of the two is
+required; interval-seconds exists because cron's own resolution bottoms
+out at a minute, too coarse to usefully demo recurrence live), each firing
+a plain run with the flags given here. `recurring cancel` disables it
+(kept, not deleted, so `recurring list` still shows its history).
 
 `--on-failure {halt,fallback}` overrides the workflow's code-declared
 StageRegistry default for this run (or every firing of this recurring
@@ -166,7 +169,11 @@ def _recurring_create(args: argparse.Namespace) -> int:
     start_from = args.stage or args.start_from
     stop_after = args.stage or args.stop_after
 
-    body: dict = {"cron_expression": args.cron}
+    body: dict = {}
+    if args.cron is not None:
+        body["cron_expression"] = args.cron
+    else:
+        body["interval_seconds"] = args.interval_seconds
     if start_from is not None:
         body["start_from"] = start_from
     if stop_after is not None:
@@ -199,7 +206,8 @@ def _recurring_list(args: argparse.Namespace) -> int:
 
     for r in response.json():
         state = "enabled" if r["enabled"] else "cancelled"
-        print(f"{r['id']}: {r['cron_expression']} ({state}), next run at {r['next_run_at']}")
+        cadence = r["cron_expression"] if r["cron_expression"] is not None else f"every {r['interval_seconds']}s"
+        print(f"{r['id']}: {cadence} ({state}), next run at {r['next_run_at']}")
     return 0
 
 
@@ -281,8 +289,16 @@ def main(argv: list[str] | None = None) -> int:
         "create", help="Register a standing rule that fires a run on a cron cadence"
     )
     recurring_create_parser.add_argument("workflow", help="workflow name, e.g. feed_success")
-    recurring_create_parser.add_argument(
-        "--cron", required=True, metavar="EXPR", help="standard 5-field cron expression, e.g. '0 * * * *'"
+    recurring_cadence = recurring_create_parser.add_mutually_exclusive_group(required=True)
+    recurring_cadence.add_argument(
+        "--cron", metavar="EXPR", help="standard 5-field cron expression, e.g. '0 * * * *'"
+    )
+    recurring_cadence.add_argument(
+        "--interval-seconds",
+        type=int,
+        metavar="N",
+        help="fire every N seconds instead of on a cron cadence -- finer-grained than cron's "
+        "minute-level resolution, handy for demos",
     )
     recurring_create_parser.add_argument(
         "--stage", metavar="NAME", help="each firing runs just this one stage"

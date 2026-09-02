@@ -13,19 +13,19 @@ class InMemoryRecurringScheduleRepository:
     def create(
         self,
         workflow_name: str,
-        cron_expression: str,
         start_from: str | None,
         stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool | None,
         next_run_at: str,
         created_at: str,
+        cron_expression: str | None = None,
+        interval_seconds: int | None = None,
         on_failure: str | None = None,
     ) -> RecurringSchedule:
         recurring = RecurringSchedule(
             id=self._next_id,
             workflow_name=workflow_name,
-            cron_expression=cron_expression,
             start_from=start_from,
             stop_after=stop_after,
             input_versions=input_versions,
@@ -33,6 +33,8 @@ class InMemoryRecurringScheduleRepository:
             enabled=True,
             next_run_at=next_run_at,
             created_at=created_at,
+            cron_expression=cron_expression,
+            interval_seconds=interval_seconds,
             on_failure=on_failure,
         )
         self._recurring_schedules[recurring.id] = recurring

@@ -191,6 +191,22 @@ class TestRecurringIntake:
         _poll(store, queue, _registry_provider(_linear_registry()))
         assert len(store.active_workflow_runs()) == 1  # no second run spawned this tick
 
+    def test_interval_seconds_recurring_schedule_fires_and_advances(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_recurring_schedule(
+            "feed_ranking",
+            cron_expression=None,
+            interval_seconds=30,
+            next_run_at=_in(-timedelta(seconds=1)),
+        )
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+        assert len(store.active_workflow_runs()) == 1
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+        assert len(store.active_workflow_runs()) == 1  # advanced ~30s out, not due again this tick
+
 
 class TestPromoteResolution:
     def test_full_run_defaults_promote_true(self):

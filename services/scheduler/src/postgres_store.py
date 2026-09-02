@@ -66,17 +66,18 @@ CREATE TABLE IF NOT EXISTS schedules (
 );
 
 CREATE TABLE IF NOT EXISTS recurring_schedules (
-    id              BIGSERIAL PRIMARY KEY,
-    workflow_name   TEXT NOT NULL,
-    cron_expression TEXT NOT NULL,
-    start_from      TEXT,
-    stop_after      TEXT,
-    input_versions  JSONB,
-    promote         BOOLEAN,
-    enabled         BOOLEAN NOT NULL DEFAULT true,
-    next_run_at     TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL,
-    on_failure      TEXT
+    id               BIGSERIAL PRIMARY KEY,
+    workflow_name    TEXT NOT NULL,
+    cron_expression  TEXT,
+    interval_seconds INTEGER,
+    start_from       TEXT,
+    stop_after       TEXT,
+    input_versions   JSONB,
+    promote          BOOLEAN,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
+    next_run_at      TIMESTAMPTZ NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL,
+    on_failure       TEXT
 );
 """
 
@@ -119,19 +120,21 @@ class PostgresScheduleStore:
     def due_recurring_schedules(self) -> list[DueRecurringSchedule]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT id, workflow_name, cron_expression, start_from, stop_after, input_versions, "
-                "promote, on_failure FROM recurring_schedules WHERE enabled AND next_run_at <= now()"
+                "SELECT id, workflow_name, cron_expression, interval_seconds, start_from, stop_after, "
+                "input_versions, promote, on_failure FROM recurring_schedules "
+                "WHERE enabled AND next_run_at <= now()"
             )
             return [
                 DueRecurringSchedule(
                     id=row[0],
                     workflow_name=row[1],
                     cron_expression=row[2],
-                    start_from=row[3],
-                    stop_after=row[4],
-                    input_versions=row[5],
-                    promote=row[6],
-                    on_failure=row[7],
+                    interval_seconds=row[3],
+                    start_from=row[4],
+                    stop_after=row[5],
+                    input_versions=row[6],
+                    promote=row[7],
+                    on_failure=row[8],
                 )
                 for row in cur.fetchall()
             ]

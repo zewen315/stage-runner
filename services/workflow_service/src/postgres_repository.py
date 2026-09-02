@@ -87,17 +87,19 @@ CREATE TABLE IF NOT EXISTS schedules (
 -- "dispatched" itself, it just spawns a plain WorkflowRun each time
 -- next_run_at comes due, via these same defaults.
 CREATE TABLE IF NOT EXISTS recurring_schedules (
-    id              BIGSERIAL PRIMARY KEY,
-    workflow_name   TEXT NOT NULL,
-    cron_expression TEXT NOT NULL,
-    start_from      TEXT,
-    stop_after      TEXT,
-    input_versions  JSONB,
-    promote         BOOLEAN,
-    enabled         BOOLEAN NOT NULL DEFAULT true,
-    next_run_at     TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL,
-    on_failure      TEXT
+    id               BIGSERIAL PRIMARY KEY,
+    workflow_name    TEXT NOT NULL,
+    -- Exactly one of these two is set -- see RecurringSchedule in models.py.
+    cron_expression  TEXT,
+    interval_seconds INTEGER,
+    start_from       TEXT,
+    stop_after       TEXT,
+    input_versions   JSONB,
+    promote          BOOLEAN,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
+    next_run_at      TIMESTAMPTZ NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL,
+    on_failure       TEXT
 );
 """
 
@@ -188,8 +190,8 @@ class PostgresScheduleRepository:
 
 class PostgresRecurringScheduleRepository:
     _COLUMNS = (
-        "id, workflow_name, cron_expression, start_from, stop_after, input_versions, promote, "
-        "enabled, next_run_at, created_at, on_failure"
+        "id, workflow_name, start_from, stop_after, input_versions, promote, "
+        "enabled, next_run_at, created_at, cron_expression, interval_seconds, on_failure"
     )
 
     def __init__(self, dsn: str):
@@ -205,47 +207,50 @@ class PostgresRecurringScheduleRepository:
         return RecurringSchedule(
             id=row[0],
             workflow_name=row[1],
-            cron_expression=row[2],
-            start_from=row[3],
-            stop_after=row[4],
-            input_versions=row[5],
-            promote=row[6],
-            enabled=row[7],
-            next_run_at=row[8].isoformat(),
-            created_at=row[9].isoformat(),
-            on_failure=row[10],
+            start_from=row[2],
+            stop_after=row[3],
+            input_versions=row[4],
+            promote=row[5],
+            enabled=row[6],
+            next_run_at=row[7].isoformat(),
+            created_at=row[8].isoformat(),
+            cron_expression=row[9],
+            interval_seconds=row[10],
+            on_failure=row[11],
         )
 
     def create(
         self,
         workflow_name: str,
-        cron_expression: str,
         start_from: str | None,
         stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool | None,
         next_run_at: str,
         created_at: str,
+        cron_expression: str | None = None,
+        interval_seconds: int | None = None,
         on_failure: str | None = None,
     ) -> RecurringSchedule:
         with self._conn.cursor() as cur:
             cur.execute(
                 f"""
                 INSERT INTO recurring_schedules
-                    (workflow_name, cron_expression, start_from, stop_after, input_versions, promote,
-                     next_run_at, created_at, on_failure)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (workflow_name, start_from, stop_after, input_versions, promote,
+                     next_run_at, created_at, cron_expression, interval_seconds, on_failure)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {self._COLUMNS}
                 """,
                 (
                     workflow_name,
-                    cron_expression,
                     start_from,
                     stop_after,
                     Jsonb(input_versions) if input_versions is not None else None,
                     promote,
                     next_run_at,
                     created_at,
+                    cron_expression,
+                    interval_seconds,
                     on_failure,
                 ),
             )

@@ -5,6 +5,7 @@ import pytest
 from errors import (
     InvalidCronExpressionError,
     InvalidOnFailureError,
+    InvalidRecurrenceError,
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
@@ -279,6 +280,25 @@ class TestRecurringSchedules:
     def test_invalid_cron_expression_raises(self, service):
         with pytest.raises(InvalidCronExpressionError):
             service.create_recurring_schedule("feed_ranking", "not a cron")
+
+    def test_create_with_interval_seconds_computes_next_run_at(self, service):
+        recurring = service.create_recurring_schedule("feed_ranking", interval_seconds=30)
+
+        assert recurring.cron_expression is None
+        assert recurring.interval_seconds == 30
+        assert recurring.next_run_at > recurring.created_at
+
+    def test_neither_cron_nor_interval_raises(self, service):
+        with pytest.raises(InvalidRecurrenceError):
+            service.create_recurring_schedule("feed_ranking")
+
+    def test_both_cron_and_interval_raises(self, service):
+        with pytest.raises(InvalidRecurrenceError):
+            service.create_recurring_schedule("feed_ranking", "* * * * *", interval_seconds=30)
+
+    def test_non_positive_interval_seconds_raises(self, service):
+        with pytest.raises(InvalidRecurrenceError):
+            service.create_recurring_schedule("feed_ranking", interval_seconds=0)
 
     def test_create_unknown_workflow_raises(self, service):
         with pytest.raises(WorkflowNotFoundError):

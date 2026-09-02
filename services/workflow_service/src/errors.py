@@ -22,6 +22,12 @@ class InvalidCronExpressionError(Exception):
     """Raised when a recurring schedule's cron_expression can't be parsed."""
 
 
+class InvalidRecurrenceError(Exception):
+    """Raised when a recurring schedule's recurrence isn't exactly one of
+    cron_expression/interval_seconds, or interval_seconds isn't a positive
+    integer."""
+
+
 class RunNotCancellableError(Exception):
     """Raised when trying to cancel a run that's already terminal
     (completed, failed, or already cancelled)."""

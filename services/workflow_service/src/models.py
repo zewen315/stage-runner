@@ -90,7 +90,6 @@ class RecurringSchedule:
 
     id: int
     workflow_name: str
-    cron_expression: str
     start_from: str | None
     stop_after: str | None
     input_versions: dict[str, int] | None
@@ -98,6 +97,12 @@ class RecurringSchedule:
     enabled: bool
     next_run_at: str
     created_at: str
+    cron_expression: str | None = None
+    interval_seconds: int | None = None
+    """Exactly one of cron_expression/interval_seconds is set -- the
+    former for a standard cron cadence, the latter for a fixed "every N
+    seconds" cadence too short to express in cron's minute-level
+    resolution (handy for demos/testing)."""
     on_failure: str | None = None
 
 

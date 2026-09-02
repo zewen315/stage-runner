@@ -16,7 +16,10 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
   const [promote, setPromote] = useState(false)
   const [onFailure, setOnFailure] = useState('') // '' = workflow default
   const [runAt, setRunAt] = useState('') // datetime-local string, browser-local time; '' = now
+  const [cadenceMode, setCadenceMode] = useState('interval') // 'cron' | 'interval'
   const [cron, setCron] = useState('')
+  const [intervalValue, setIntervalValue] = useState('30')
+  const [intervalUnit, setIntervalUnit] = useState('seconds') // 'seconds' | 'minutes'
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -90,9 +93,21 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
       setFormError('Choose a workflow.')
       return
     }
-    if (mode === 'recurring' && !cron.trim()) {
-      setFormError('Enter a cron expression.')
-      return
+    let intervalSeconds = null
+    if (mode === 'recurring') {
+      if (cadenceMode === 'cron') {
+        if (!cron.trim()) {
+          setFormError('Enter a cron expression.')
+          return
+        }
+      } else {
+        const n = Number(intervalValue)
+        if (!Number.isInteger(n) || n <= 0) {
+          setFormError('Enter a positive whole number for the interval.')
+          return
+        }
+        intervalSeconds = intervalUnit === 'minutes' ? n * 60 : n
+      }
     }
 
     const body = {}
@@ -120,7 +135,11 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
         if (runAt) body.run_at = new Date(runAt).toISOString()
         await requestRun(workflowName, body)
       } else {
-        body.cron_expression = cron.trim()
+        if (cadenceMode === 'cron') {
+          body.cron_expression = cron.trim()
+        } else {
+          body.interval_seconds = intervalSeconds
+        }
         await createRecurringSchedule(workflowName, body)
       }
       onDone()
@@ -229,16 +248,55 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
             <input type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} />
           </label>
         ) : (
-          <label>
-            Cron expression
-            <input
-              className="mono"
-              value={cron}
-              onChange={(e) => setCron(e.target.value)}
-              placeholder="0 * * * *"
-            />
-            <span className="hint-inline">standard 5-field cron, e.g. "0 * * * *" for every hour</span>
-          </label>
+          <>
+            <div className="radio-group">
+              <label className="radio-option">
+                <input
+                  type="radio"
+                  checked={cadenceMode === 'interval'}
+                  onChange={() => setCadenceMode('interval')}
+                />
+                Every N seconds/minutes
+              </label>
+              <label className="radio-option">
+                <input type="radio" checked={cadenceMode === 'cron'} onChange={() => setCadenceMode('cron')} />
+                Cron expression
+              </label>
+            </div>
+
+            {cadenceMode === 'interval' ? (
+              <label>
+                Interval
+                <div className="interval-row">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={intervalValue}
+                    onChange={(e) => setIntervalValue(e.target.value)}
+                  />
+                  <select value={intervalUnit} onChange={(e) => setIntervalUnit(e.target.value)}>
+                    <option value="seconds">seconds</option>
+                    <option value="minutes">minutes</option>
+                  </select>
+                </div>
+                <span className="hint-inline">
+                  finer-grained than cron's minute-level resolution -- handy for demos
+                </span>
+              </label>
+            ) : (
+              <label>
+                Cron expression
+                <input
+                  className="mono"
+                  value={cron}
+                  onChange={(e) => setCron(e.target.value)}
+                  placeholder="0 * * * *"
+                />
+                <span className="hint-inline">standard 5-field cron, e.g. "0 * * * *" for every hour</span>
+              </label>
+            )}
+          </>
         )}
 
         {formError && <p className="error">{formError}</p>}

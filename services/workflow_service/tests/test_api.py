@@ -185,6 +185,30 @@ def test_create_recurring_schedule_invalid_cron_is_400(client):
     assert response.status_code == 400
 
 
+def test_create_recurring_schedule_with_interval_seconds_returns_201(client):
+    response = client.post(
+        "/workflows/feed_ranking/recurring-schedules", json={"interval_seconds": 30}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["cron_expression"] is None
+    assert body["interval_seconds"] == 30
+
+
+def test_create_recurring_schedule_neither_cron_nor_interval_is_400(client):
+    response = client.post("/workflows/feed_ranking/recurring-schedules", json={})
+    assert response.status_code == 400
+
+
+def test_create_recurring_schedule_both_cron_and_interval_is_400(client):
+    response = client.post(
+        "/workflows/feed_ranking/recurring-schedules",
+        json={"cron_expression": "* * * * *", "interval_seconds": 30},
+    )
+    assert response.status_code == 400
+
+
 def test_list_recurring_schedules(client):
     client.post("/workflows/feed_ranking/recurring-schedules", json={"cron_expression": "* * * * *"})
 

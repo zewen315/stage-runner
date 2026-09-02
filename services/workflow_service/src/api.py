@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict
 from errors import (
     InvalidCronExpressionError,
     InvalidOnFailureError,
+    InvalidRecurrenceError,
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
@@ -116,6 +117,11 @@ async def handle_invalid_cron_expression(request: Request, exc: InvalidCronExpre
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
+@app.exception_handler(InvalidRecurrenceError)
+async def handle_invalid_recurrence(request: Request, exc: InvalidRecurrenceError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
 @app.exception_handler(RunNotCancellableError)
 async def handle_run_not_cancellable(request: Request, exc: RunNotCancellableError) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": str(exc)})
@@ -188,7 +194,6 @@ class RecurringScheduleResponse(BaseModel):
 
     id: int
     workflow_name: str
-    cron_expression: str
     start_from: str | None
     stop_after: str | None
     input_versions: dict[str, int] | None
@@ -196,6 +201,8 @@ class RecurringScheduleResponse(BaseModel):
     enabled: bool
     next_run_at: str
     created_at: str
+    cron_expression: str | None
+    interval_seconds: int | None
     on_failure: str | None
 
 
@@ -209,7 +216,8 @@ class RequestRunRequest(BaseModel):
 
 
 class CreateRecurringScheduleRequest(BaseModel):
-    cron_expression: str
+    cron_expression: str | None = None
+    interval_seconds: int | None = None
     start_from: str | None = None
     stop_after: str | None = None
     input_versions: dict[str, int] | None = None
@@ -274,12 +282,13 @@ def create_recurring_schedule(
 ):
     return service.create_recurring_schedule(
         name,
-        body.cron_expression,
-        body.start_from,
-        body.stop_after,
-        body.input_versions,
-        body.promote,
-        body.on_failure,
+        cron_expression=body.cron_expression,
+        interval_seconds=body.interval_seconds,
+        start_from=body.start_from,
+        stop_after=body.stop_after,
+        input_versions=body.input_versions,
+        promote=body.promote,
+        on_failure=body.on_failure,
     )
 
 

@@ -44,13 +44,14 @@ class RecurringScheduleRepository(Protocol):
     def create(
         self,
         workflow_name: str,
-        cron_expression: str,
         start_from: str | None,
         stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool | None,
         next_run_at: str,
         created_at: str,
+        cron_expression: str | None = None,
+        interval_seconds: int | None = None,
         on_failure: str | None = None,
     ) -> RecurringSchedule: ...
 

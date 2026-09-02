@@ -531,6 +531,23 @@ a.run-card:hover {
   gap: 0.6rem;
 }
 
+.stage-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.stage-row > * {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .stage-row {
+    flex-direction: column;
+  }
+}
+
 .stage-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -664,6 +681,19 @@ a.run-card:hover {
   align-items: center;
   gap: 0.4rem !important;
   font-weight: 400 !important;
+}
+
+.interval-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.interval-row input {
+  flex: 1;
+}
+
+.interval-row select {
+  width: auto;
 }
 
 /* -- resource versions --------------------------------------------- */
