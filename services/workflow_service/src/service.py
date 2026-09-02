@@ -26,6 +26,7 @@ from errors import (
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
+    ScheduleNotCancellableError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
     WorkflowNotFoundError,
@@ -154,17 +155,22 @@ class WorkflowService:
 
     def get_schedule_status(self, workflow_name: str, schedule_id: int) -> ScheduleStatus:
         """Client-facing polling target: proxies the status of the
-        WorkflowRun this schedule dispatched to, once it has."""
+        WorkflowRun this schedule dispatched to, once it has. Before
+        that, it's "requested" -- or "cancelled" if
+        request_schedule_cancel() was called; the Scheduler's own
+        pending_schedules() query is what actually keeps a cancelled one
+        from ever being dispatched, so this is read-only bookkeeping."""
         schedule = self._require_schedule(workflow_name, schedule_id)
 
         if schedule.dispatched_at is None:
+            status = RunStatus.CANCELLED.value if schedule.cancel_requested else RunStatus.REQUESTED.value
             return ScheduleStatus(
                 id=schedule.id,
                 workflow_name=schedule.workflow_name,
                 start_from=schedule.start_from,
                 stop_after=schedule.stop_after,
                 run_at=schedule.run_at,
-                status=RunStatus.REQUESTED.value,
+                status=status,
                 error=None,
                 run_id=None,
             )
@@ -283,6 +289,20 @@ class WorkflowService:
         if run.status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED):
             raise RunNotCancellableError(f"run {run_id} is already {run.status.value}")
         self._workflow_runs.mark_cancel_requested(run_id)
+
+    def request_schedule_cancel(self, workflow_name: str, schedule_id: int) -> None:
+        """Client-facing: cancel a one-off schedule before the Scheduler
+        ever dispatches it. Once dispatched (dispatched_at is set), it's
+        already become a WorkflowRun -- cancel that instead, via
+        request_cancel(), the same way a recurring schedule's individual
+        firings are cancelled through the runs they spawn, not the
+        standing rule."""
+        schedule = self._require_schedule(workflow_name, schedule_id)
+        if schedule.dispatched_at is not None:
+            raise ScheduleNotCancellableError(
+                f"schedule {schedule_id} was already dispatched to run {schedule.run_id}"
+            )
+        self._schedules.request_cancel(schedule_id)
 
     def list_runs(self, workflow_name: str, limit: int = 50) -> list[WorkflowRun]:
         self._require_workflow(workflow_name)

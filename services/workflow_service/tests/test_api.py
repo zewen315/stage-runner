@@ -167,6 +167,38 @@ def test_list_pending_schedules_unknown_workflow_is_404(client):
     assert response.status_code == 404
 
 
+def test_cancel_schedule_marks_it_cancelled(client):
+    schedule = client.post("/workflows/feed_ranking/runs").json()
+
+    response = client.post(f"/workflows/feed_ranking/schedules/{schedule['id']}/cancel")
+    assert response.status_code == 204
+
+    status = client.get(f"/workflows/feed_ranking/schedules/{schedule['id']}").json()
+    assert status["status"] == "cancelled"
+
+
+def test_cancel_schedule_excludes_it_from_pending_list(client):
+    schedule = client.post("/workflows/feed_ranking/runs").json()
+    client.post(f"/workflows/feed_ranking/schedules/{schedule['id']}/cancel")
+
+    response = client.get("/workflows/feed_ranking/schedules")
+    assert response.json() == []
+
+
+def test_cancel_dispatched_schedule_is_409(client, schedules, workflow_runs):
+    schedule = client.post("/workflows/feed_ranking/runs").json()
+    workflow_runs.add(_workflow_run(id=42, status=RunStatus.RUNNING))
+    schedules.mark_dispatched(schedule["id"], dispatched_at=NOW, run_id=42)
+
+    response = client.post(f"/workflows/feed_ranking/schedules/{schedule['id']}/cancel")
+    assert response.status_code == 409
+
+
+def test_cancel_unknown_schedule_is_404(client):
+    response = client.post("/workflows/feed_ranking/schedules/999/cancel")
+    assert response.status_code == 404
+
+
 def test_create_recurring_schedule_returns_201(client):
     response = client.post(
         "/workflows/feed_ranking/recurring-schedules", json={"cron_expression": "* * * * *"}

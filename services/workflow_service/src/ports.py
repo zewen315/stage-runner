@@ -34,10 +34,14 @@ class ScheduleRepository(Protocol):
     def get(self, workflow_name: str, schedule_id: int) -> Schedule | None: ...
 
     def list_pending(self, workflow_name: str) -> list[Schedule]:
-        """Schedules not yet dispatched (dispatched_at is None), most
-        recent first. Once dispatched, a schedule's info is superseded by
-        the WorkflowRun it created -- not returned here."""
+        """Schedules not yet dispatched (dispatched_at is None) and not
+        cancelled, most recent first. Once dispatched, a schedule's info
+        is superseded by the WorkflowRun it created -- not returned here;
+        a cancelled-but-undispatched one is also excluded, but still
+        reachable (and shows as cancelled) via `get`."""
         ...
+
+    def request_cancel(self, schedule_id: int) -> None: ...
 
 
 class RecurringScheduleRepository(Protocol):

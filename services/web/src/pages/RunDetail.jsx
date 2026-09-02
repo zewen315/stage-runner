@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { cancelRun, getRun, listStageRuns, listStages } from '../api.js'
+import { depthLevels } from '../dagLayout.js'
 import { useNewRunModal } from '../NewRunModalContext.jsx'
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
@@ -130,31 +131,6 @@ export default function RunDetail() {
       </div>
     </div>
   )
-}
-
-// Groups stages by dependency depth (longest path from a root) so
-// parallel branches -- multiple stages at the same depth -- render
-// side by side instead of in one flat, misleadingly linear-looking list.
-// A plain chain (every existing demo workflow except feed_branching)
-// still renders as one stage per row, identical to a flat list.
-function depthLevels(stages) {
-  const byName = Object.fromEntries(stages.map((s) => [s.name, s]))
-  const depth = {}
-
-  function depthOf(name) {
-    if (name in depth) return depth[name]
-    depth[name] = 0 // cycle guard; the DAG is acyclic in practice
-    const deps = byName[name].depends_on.filter((d) => d in byName)
-    depth[name] = deps.length === 0 ? 0 : 1 + Math.max(...deps.map(depthOf))
-    return depth[name]
-  }
-
-  const levels = []
-  for (const stage of stages) {
-    const d = depthOf(stage.name)
-    ;(levels[d] ??= []).push(stage)
-  }
-  return levels
 }
 
 function RanStageCard({ sr, onRunFromHere }) {

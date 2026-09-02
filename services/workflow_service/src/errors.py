@@ -33,5 +33,10 @@ class RunNotCancellableError(Exception):
     (completed, failed, or already cancelled)."""
 
 
+class ScheduleNotCancellableError(Exception):
+    """Raised when trying to cancel a schedule that's already been
+    dispatched to a WorkflowRun -- cancel that run instead."""
+
+
 class InvalidOnFailureError(Exception):
     """Raised when on_failure isn't one of "halt" or "fallback"."""

@@ -3,8 +3,11 @@ import { NewRunModalProvider, useNewRunModal } from './NewRunModalContext.jsx'
 import NewRunModal from './components/NewRunModal.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import RunDetail from './pages/RunDetail.jsx'
+import ScheduleDetail from './pages/ScheduleDetail.jsx'
+import RecurringScheduleDetail from './pages/RecurringScheduleDetail.jsx'
 import ResourceDetail from './pages/ResourceDetail.jsx'
 import WorkflowsList from './pages/WorkflowsList.jsx'
+import WorkflowDetail from './pages/WorkflowDetail.jsx'
 import ResourcesList from './pages/ResourcesList.jsx'
 
 function navLinkClass({ isActive }) {
@@ -48,6 +51,12 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/workflows" element={<WorkflowsList />} />
             <Route path="/workflows/:name/runs/:runId" element={<RunDetail />} />
+            <Route path="/workflows/:name/schedules/:scheduleId" element={<ScheduleDetail />} />
+            <Route
+              path="/workflows/:name/recurring-schedules/:recurringId"
+              element={<RecurringScheduleDetail />}
+            />
+            <Route path="/workflows/:name" element={<WorkflowDetail />} />
             <Route path="/resources" element={<ResourcesList />} />
             <Route path="/resources/:name" element={<ResourceDetail />} />
           </Routes>

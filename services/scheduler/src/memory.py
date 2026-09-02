@@ -30,6 +30,7 @@ class InMemoryScheduleStore:
         promote: bool | None = None,
         run_at: str | None = None,
         on_failure: str | None = None,
+        cancel_requested: bool = False,
     ) -> int:
         schedule_id = self._next_schedule_id
         self._schedules[schedule_id] = {
@@ -40,6 +41,7 @@ class InMemoryScheduleStore:
             "promote": promote,
             "run_at": run_at,
             "on_failure": on_failure,
+            "cancel_requested": cancel_requested,
             "dispatched": False,
         }
         self._next_schedule_id += 1
@@ -152,7 +154,7 @@ class InMemoryScheduleStore:
                 on_failure=s["on_failure"],
             )
             for sid, s in self._schedules.items()
-            if not s["dispatched"] and (s["run_at"] is None or s["run_at"] <= now)
+            if not s["dispatched"] and (s["run_at"] is None or s["run_at"] <= now) and not s["cancel_requested"]
         ]
 
     def mark_schedule_dispatched(self, schedule_id: int, *, run_id: int) -> None:

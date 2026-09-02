@@ -100,6 +100,18 @@ class TestIntake:
         assert message["promote"] is False  # partial-run default
 
 
+class TestScheduleCancellation:
+    def test_cancelled_schedule_is_never_dispatched(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_schedule("feed_ranking", cancel_requested=True)
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
+
 class TestRunAt:
     def test_future_run_at_is_not_dispatched(self):
         store = InMemoryScheduleStore()

@@ -100,7 +100,7 @@ class InMemoryScheduleRepository:
         matching = [
             s
             for s in self._schedules.values()
-            if s.workflow_name == workflow_name and s.dispatched_at is None
+            if s.workflow_name == workflow_name and s.dispatched_at is None and not s.cancel_requested
         ]
         return sorted(matching, key=lambda s: s.id, reverse=True)
 
@@ -111,6 +111,9 @@ class InMemoryScheduleRepository:
         self._schedules[schedule_id] = replace(
             self._schedules[schedule_id], dispatched_at=dispatched_at, run_id=run_id
         )
+
+    def request_cancel(self, schedule_id: int) -> None:
+        self._schedules[schedule_id] = replace(self._schedules[schedule_id], cancel_requested=True)
 
 
 class InMemoryWorkflowRunRepository:

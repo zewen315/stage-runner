@@ -62,6 +62,10 @@ export function listPendingSchedules(workflowName) {
   return request(`/workflows/${workflowName}/schedules`)
 }
 
+export function cancelSchedule(workflowName, scheduleId) {
+  return request(`/workflows/${workflowName}/schedules/${scheduleId}/cancel`, { method: 'POST' })
+}
+
 export function listRecurringSchedules(workflowName) {
   return request(`/workflows/${workflowName}/recurring-schedules`)
 }

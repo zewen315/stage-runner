@@ -34,6 +34,7 @@ from errors import (
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
+    ScheduleNotCancellableError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
     WorkflowNotFoundError,
@@ -124,6 +125,11 @@ async def handle_invalid_recurrence(request: Request, exc: InvalidRecurrenceErro
 
 @app.exception_handler(RunNotCancellableError)
 async def handle_run_not_cancellable(request: Request, exc: RunNotCancellableError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(ScheduleNotCancellableError)
+async def handle_schedule_not_cancellable(request: Request, exc: ScheduleNotCancellableError) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
@@ -272,6 +278,11 @@ def get_schedule_status(name: str, schedule_id: int, service: WorkflowService = 
 @app.get("/workflows/{name}/schedules", response_model=list[ScheduleResponse])
 def list_pending_schedules(name: str, service: WorkflowService = Depends(get_service)):
     return service.list_pending_schedules(name)
+
+
+@app.post("/workflows/{name}/schedules/{schedule_id}/cancel", status_code=204)
+def cancel_schedule(name: str, schedule_id: int, service: WorkflowService = Depends(get_service)):
+    service.request_schedule_cancel(name, schedule_id)
 
 
 @app.post(

@@ -180,6 +180,8 @@ button {
   padding: 0.35rem 0.7rem;
   border-radius: 6px;
   font-size: 0.82rem;
+  text-decoration: none;
+  display: inline-block;
 }
 
 .btn-ghost:hover {
@@ -576,7 +578,8 @@ a.run-card:hover {
   color: var(--text-muted);
 }
 
-.stage-card-actions {
+.stage-card-actions,
+.row-actions-top {
   margin-top: 0.6rem;
 }
 
@@ -776,6 +779,63 @@ a.run-card:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   overflow-x: auto;
   white-space: pre;
+}
+
+/* -- workflow structure (list/graph) ---------------------------------- */
+
+.view-toggle {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.view-toggle button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.workflow-graph-scroll {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.5rem;
+}
+
+.graph-node {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.graph-node-external {
+  fill: var(--bg);
+  stroke-dasharray: 4 3;
+}
+
+.graph-node-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  fill: var(--text);
+}
+
+.graph-node-sublabel {
+  font-size: 10px;
+  text-anchor: middle;
+  fill: var(--text-muted);
+}
+
+.graph-edge {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+}
+
+.graph-arrowhead {
+  fill: var(--text-muted);
 }
 
 /* -- modals ---------------------------------------------------------- */

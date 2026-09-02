@@ -52,17 +52,21 @@ CREATE TABLE IF NOT EXISTS stage_runs (
 );
 
 CREATE TABLE IF NOT EXISTS schedules (
-    id             BIGSERIAL PRIMARY KEY,
-    workflow_name  TEXT NOT NULL,
-    start_from     TEXT,
-    stop_after     TEXT,
-    input_versions JSONB,
-    promote        BOOLEAN,
-    requested_at   TIMESTAMPTZ NOT NULL,
-    run_at         TIMESTAMPTZ,
-    dispatched_at  TIMESTAMPTZ,
-    run_id         BIGINT REFERENCES runs(id),
-    on_failure     TEXT
+    id               BIGSERIAL PRIMARY KEY,
+    workflow_name    TEXT NOT NULL,
+    start_from       TEXT,
+    stop_after       TEXT,
+    input_versions   JSONB,
+    promote          BOOLEAN,
+    requested_at     TIMESTAMPTZ NOT NULL,
+    run_at           TIMESTAMPTZ,
+    dispatched_at    TIMESTAMPTZ,
+    run_id           BIGINT REFERENCES runs(id),
+    on_failure       TEXT,
+    -- Set by workflow_service's request_schedule_cancel() before
+    -- dispatch -- pending_schedules() below excludes these, so a
+    -- cancelled schedule simply never gets dispatched.
+    cancel_requested BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS recurring_schedules (
@@ -95,7 +99,8 @@ class PostgresScheduleStore:
         with self._conn.cursor() as cur:
             cur.execute(
                 "SELECT id, workflow_name, start_from, stop_after, input_versions, promote, on_failure "
-                "FROM schedules WHERE dispatched_at IS NULL AND (run_at IS NULL OR run_at <= now())"
+                "FROM schedules WHERE dispatched_at IS NULL AND (run_at IS NULL OR run_at <= now()) "
+                "AND NOT cancel_requested"
             )
             return [
                 PendingSchedule(

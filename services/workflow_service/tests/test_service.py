@@ -9,6 +9,7 @@ from errors import (
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
+    ScheduleNotCancellableError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
     WorkflowNotFoundError,
@@ -222,6 +223,33 @@ class TestGetScheduleStatus:
         with pytest.raises(ScheduleNotFoundError):
             service.get_schedule_status("feed_ranking", 999)
 
+    def test_cancelled_undispatched_schedule_is_cancelled(self, service):
+        schedule = service.request_run("feed_ranking")
+        service.request_schedule_cancel("feed_ranking", schedule.id)
+
+        status = service.get_schedule_status("feed_ranking", schedule.id)
+
+        assert status.status == RunStatus.CANCELLED.value
+
+
+class TestCancelSchedule:
+    def test_cancel_undispatched_schedule_succeeds(self, service):
+        schedule = service.request_run("feed_ranking")
+        service.request_schedule_cancel("feed_ranking", schedule.id)
+        assert service.get_schedule_status("feed_ranking", schedule.id).status == RunStatus.CANCELLED.value
+
+    def test_cancel_dispatched_schedule_raises(self, service, schedules, workflow_runs):
+        schedule = service.request_run("feed_ranking")
+        run = _seed_workflow_run(workflow_runs, status=RunStatus.RUNNING)
+        schedules.mark_dispatched(schedule.id, dispatched_at=NOW, run_id=run.id)
+
+        with pytest.raises(ScheduleNotCancellableError):
+            service.request_schedule_cancel("feed_ranking", schedule.id)
+
+    def test_cancel_unknown_schedule_raises(self, service):
+        with pytest.raises(ScheduleNotFoundError):
+            service.request_schedule_cancel("feed_ranking", 999)
+
 
 class TestListPendingSchedules:
     def test_lists_undispatched_schedules_most_recent_first(self, service):
@@ -232,6 +260,12 @@ class TestListPendingSchedules:
 
         assert [s.id for s in pending] == [second.id, second.id - 1]
         assert all(s.status == RunStatus.REQUESTED.value for s in pending)
+
+    def test_cancelled_schedule_excluded_from_pending(self, service):
+        schedule = service.request_run("feed_ranking")
+        service.request_schedule_cancel("feed_ranking", schedule.id)
+
+        assert service.list_pending_schedules("feed_ranking") == []
 
     def test_surfaces_run_at(self, service):
         service.request_run("feed_ranking", run_at="2099-01-01T00:00:00+00:00")

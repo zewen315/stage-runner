@@ -79,7 +79,11 @@ CREATE TABLE IF NOT EXISTS schedules (
     run_id         BIGINT REFERENCES runs(id),
     -- NULL means use the workflow's own code-declared default; copied
     -- onto the WorkflowRun this schedule dispatches to.
-    on_failure     TEXT
+    on_failure     TEXT,
+    -- Set by request_schedule_cancel() before dispatch; the Scheduler's
+    -- own pending_schedules() query excludes these, so a cancelled
+    -- schedule simply never gets dispatched -- no status to write back.
+    cancel_requested BOOLEAN NOT NULL DEFAULT false
 );
 
 -- A standing rule the Scheduler fires on a cadence -- distinct from
@@ -107,7 +111,7 @@ CREATE TABLE IF NOT EXISTS recurring_schedules (
 class PostgresScheduleRepository:
     _COLUMNS = (
         "id, workflow_name, start_from, stop_after, input_versions, promote, "
-        "requested_at, run_at, dispatched_at, run_id, on_failure"
+        "requested_at, run_at, dispatched_at, run_id, on_failure, cancel_requested"
     )
 
     def __init__(self, dsn: str):
@@ -132,6 +136,7 @@ class PostgresScheduleRepository:
             dispatched_at=row[8].isoformat() if row[8] else None,
             run_id=row[9],
             on_failure=row[10],
+            cancel_requested=row[11],
         )
 
     def create(
@@ -181,11 +186,16 @@ class PostgresScheduleRepository:
             cur.execute(
                 f"""
                 SELECT {self._COLUMNS} FROM schedules
-                WHERE workflow_name = %s AND dispatched_at IS NULL ORDER BY id DESC
+                WHERE workflow_name = %s AND dispatched_at IS NULL AND NOT cancel_requested
+                ORDER BY id DESC
                 """,
                 (workflow_name,),
             )
             return [self._schedule_from_row(row) for row in cur.fetchall()]
+
+    def request_cancel(self, schedule_id: int) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute("UPDATE schedules SET cancel_requested = true WHERE id = %s", (schedule_id,))
 
 
 class PostgresRecurringScheduleRepository:

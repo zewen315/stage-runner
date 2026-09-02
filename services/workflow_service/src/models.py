@@ -78,6 +78,11 @@ class Schedule:
     on_failure: str | None = None
     """None means use the workflow's own code-declared default; "halt" or
     "fallback" overrides it for the run this schedule dispatches to."""
+    cancel_requested: bool = False
+    """Set by request_schedule_cancel() before the Scheduler ever
+    dispatches this schedule -- once dispatched (dispatched_at is set),
+    cancelling means cancelling the WorkflowRun it produced instead (see
+    WorkflowRun.cancel_requested), not this flag."""
 
 
 @dataclass(frozen=True)
