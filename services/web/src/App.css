@@ -194,6 +194,26 @@ button {
   cursor: not-allowed;
 }
 
+.btn-danger {
+  background: transparent;
+  border: 1px solid var(--failed);
+  color: var(--failed);
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.btn-danger:hover {
+  background: var(--failed-bg);
+}
+
+.btn-danger:disabled {
+  border-color: var(--border);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  background: transparent;
+}
+
 /* -- dashboard columns ------------------------------------------------ */
 
 .dashboard {

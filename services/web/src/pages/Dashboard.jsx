@@ -72,50 +72,40 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
       <Column title="Scheduled" count={scheduled.length} accent="requested">
+        <Pagination page={scheduledView.page} totalPages={scheduledView.totalPages} onChange={setScheduledPage} />
         {scheduled.length === 0 ? (
           <EmptyState text="No runs waiting to start." />
         ) : (
-          <>
-            <Pagination page={scheduledView.page} totalPages={scheduledView.totalPages} onChange={setScheduledPage} />
-            {scheduledView.items.map((item) =>
-              // Recurring schedules always carry next_run_at; one-time
-              // schedules never do. cron_expression alone doesn't work as
-              // the discriminator -- it's null for an interval-based
-              // recurring schedule too, which would otherwise misrender it
-              // as (and link it to) an unrelated one-time schedule.
-              item.next_run_at != null ? (
-                <RecurringScheduleCard key={`recurring-${item.id}`} schedule={item} />
-              ) : (
-                <ScheduleCard key={`once-${item.id}`} schedule={item} />
-              ),
-            )}
-          </>
+          scheduledView.items.map((item) =>
+            // Recurring schedules always carry next_run_at; one-time
+            // schedules never do. cron_expression alone doesn't work as
+            // the discriminator -- it's null for an interval-based
+            // recurring schedule too, which would otherwise misrender it
+            // as (and link it to) an unrelated one-time schedule.
+            item.next_run_at != null ? (
+              <RecurringScheduleCard key={`recurring-${item.id}`} schedule={item} />
+            ) : (
+              <ScheduleCard key={`once-${item.id}`} schedule={item} />
+            ),
+          )
         )}
       </Column>
 
       <Column title="Ongoing" count={ongoing.length} accent="running">
+        <Pagination page={ongoingView.page} totalPages={ongoingView.totalPages} onChange={setOngoingPage} />
         {ongoing.length === 0 ? (
           <EmptyState text="Nothing running right now." />
         ) : (
-          <>
-            <Pagination page={ongoingView.page} totalPages={ongoingView.totalPages} onChange={setOngoingPage} />
-            {ongoingView.items.map((run) => (
-              <RunCard key={run.id} run={run} />
-            ))}
-          </>
+          ongoingView.items.map((run) => <RunCard key={run.id} run={run} />)
         )}
       </Column>
 
       <Column title="Finished" count={finished.length} accent="completed">
+        <Pagination page={finishedView.page} totalPages={finishedView.totalPages} onChange={setFinishedPage} />
         {finished.length === 0 ? (
           <EmptyState text="Nothing has finished yet." />
         ) : (
-          <>
-            <Pagination page={finishedView.page} totalPages={finishedView.totalPages} onChange={setFinishedPage} />
-            {finishedView.items.map((run) => (
-              <RunCard key={run.id} run={run} />
-            ))}
-          </>
+          finishedView.items.map((run) => <RunCard key={run.id} run={run} />)
         )}
       </Column>
     </div>

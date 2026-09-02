@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { cancelRecurringSchedule, listRecurringSchedules } from '../api.js'
+import Modal from '../components/Modal.jsx'
 
 export default function RecurringScheduleDetail() {
   const { name, recurringId } = useParams()
   const [recurring, setRecurring] = useState(null)
   const [notFound, setNotFound] = useState(false)
   const [error, setError] = useState(null)
+  const [confirming, setConfirming] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState(null)
 
@@ -23,6 +25,7 @@ export default function RecurringScheduleDetail() {
   useEffect(load, [name, recurringId])
 
   async function handleCancel() {
+    setConfirming(false)
     setCancelling(true)
     setCancelError(null)
     try {
@@ -80,12 +83,33 @@ export default function RecurringScheduleDetail() {
 
         {recurring.enabled && (
           <div className="row-actions row-actions-top">
-            <button className="btn-ghost" onClick={handleCancel} disabled={cancelling}>
+            <button className="btn-danger" onClick={() => setConfirming(true)} disabled={cancelling}>
               {cancelling ? 'Cancelling...' : 'Cancel recurring schedule'}
             </button>
           </div>
         )}
       </div>
+
+      {confirming && (
+        <Modal onClose={() => setConfirming(false)}>
+          <h2>Cancel recurring schedule #{recurring.id}?</h2>
+          <div className="modal-body">
+            <p>
+              This stops <strong>{recurring.workflow_name}</strong> firing on this schedule
+              ({cadence}) going forward. It doesn't affect runs already in progress or already
+              finished.
+            </p>
+          </div>
+          <div className="modal-actions">
+            <button className="btn-ghost" onClick={() => setConfirming(false)}>
+              Keep it
+            </button>
+            <button className="btn-danger" onClick={handleCancel}>
+              Cancel recurring schedule
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
