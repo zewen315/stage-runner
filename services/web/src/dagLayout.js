@@ -50,12 +50,14 @@ export function graphLayout(stages) {
     ...new Set(stages.flatMap((s) => s.depends_on.filter((d) => !(d in byName)))),
   ].sort()
 
+  const shift = externalNames.length > 0 ? 1 : 0 // reserve a column for externals only if any exist
+
   const levels = []
   for (const name of externalNames) {
     ;(levels[0] ??= []).push({ name, kind: 'external', depends_on: [] })
   }
   for (const stage of stages) {
-    const d = depth[stage.name] + 1 // shift right one column for the external root column
+    const d = depth[stage.name] + shift
     ;(levels[d] ??= []).push({ name: stage.name, kind: 'stage', retries: stage.retries, depends_on: stage.depends_on })
   }
   for (let i = 0; i < levels.length; i++) levels[i] ??= []
