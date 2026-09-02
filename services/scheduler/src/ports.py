@@ -53,6 +53,8 @@ class ScheduleStore(Protocol):
 
     def mark_workflow_run_failed(self, run_id: int, error: str) -> None: ...
 
+    def mark_workflow_run_cancelled(self, run_id: int) -> None: ...
+
 
 class RunQueue(Protocol):
     def enqueue_stage_run(

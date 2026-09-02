@@ -19,17 +19,18 @@ from models import ActiveWorkflowRun, DueRecurringSchedule, PendingSchedule, Sta
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
-    id             BIGSERIAL PRIMARY KEY,
-    workflow_name  TEXT NOT NULL,
-    start_from     TEXT,
-    stop_after     TEXT,
-    input_versions JSONB,
-    promote        BOOLEAN NOT NULL,
-    status         TEXT NOT NULL,
-    requested_at   TIMESTAMPTZ NOT NULL,
-    started_at     TIMESTAMPTZ,
-    finished_at    TIMESTAMPTZ,
-    error          TEXT
+    id                BIGSERIAL PRIMARY KEY,
+    workflow_name     TEXT NOT NULL,
+    start_from        TEXT,
+    stop_after        TEXT,
+    input_versions    JSONB,
+    promote           BOOLEAN NOT NULL,
+    status            TEXT NOT NULL,
+    requested_at      TIMESTAMPTZ NOT NULL,
+    started_at        TIMESTAMPTZ,
+    finished_at       TIMESTAMPTZ,
+    error             TEXT,
+    cancel_requested  BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS stage_runs (
@@ -183,8 +184,8 @@ class PostgresScheduleStore:
     def active_workflow_runs(self) -> list[ActiveWorkflowRun]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT id, workflow_name, start_from, stop_after, input_versions, promote, status "
-                "FROM runs WHERE status IN ('requested', 'running')"
+                "SELECT id, workflow_name, start_from, stop_after, input_versions, promote, status, "
+                "cancel_requested FROM runs WHERE status IN ('requested', 'running')"
             )
             return [
                 ActiveWorkflowRun(
@@ -195,6 +196,7 @@ class PostgresScheduleStore:
                     input_versions=row[4],
                     promote=row[5],
                     status=row[6],
+                    cancel_requested=row[7],
                 )
                 for row in cur.fetchall()
             ]
@@ -223,4 +225,10 @@ class PostgresScheduleStore:
             cur.execute(
                 "UPDATE runs SET status = 'failed', finished_at = now(), error = %s WHERE id = %s",
                 (error, run_id),
+            )
+
+    def mark_workflow_run_cancelled(self, run_id: int) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE runs SET status = 'cancelled', finished_at = now() WHERE id = %s", (run_id,)
             )

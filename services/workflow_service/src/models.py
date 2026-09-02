@@ -9,6 +9,7 @@ class RunStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,11 @@ class WorkflowRun:
     started_at: str | None
     finished_at: str | None
     error: str | None
+    cancel_requested: bool = False
+    """Set by request_cancel(), acted on by the Scheduler (which alone
+    changes `status`) on its next tick -- so this can briefly be true
+    while status is still "running", the window between asking to stop
+    and the Scheduler actually marking it cancelled."""
 
 
 @dataclass(frozen=True)

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getRun, listStageRuns, listStages } from '../api.js'
+import { cancelRun, getRun, listStageRuns, listStages } from '../api.js'
 import { useNewRunModal } from '../NewRunModalContext.jsx'
 
-const TERMINAL = new Set(['completed', 'failed'])
+const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
 
 export default function RunDetail() {
   const { name, runId } = useParams()
@@ -12,6 +12,8 @@ export default function RunDetail() {
   const [stages, setStages] = useState(null)
   const [stageRuns, setStageRuns] = useState([])
   const [error, setError] = useState(null)
+  const [stopping, setStopping] = useState(false)
+  const [stopError, setStopError] = useState(null)
   const intervalRef = useRef(null)
 
   useEffect(() => {
@@ -46,6 +48,18 @@ export default function RunDetail() {
     }
   }, [name, runId])
 
+  async function handleStop() {
+    setStopping(true)
+    setStopError(null)
+    try {
+      await cancelRun(name, runId)
+    } catch (e) {
+      setStopError(e.message)
+    } finally {
+      setStopping(false)
+    }
+  }
+
   if (error) return <p className="error">{error}</p>
   if (!run || !stages) return <p className="muted">Loading...</p>
 
@@ -66,6 +80,11 @@ export default function RunDetail() {
         </div>
         <div className="run-header-actions">
           <span className={`status status-lg status-${run.status}`}>{run.status}</span>
+          {!TERMINAL.has(run.status) && (
+            <button className="btn-ghost" onClick={handleStop} disabled={stopping || run.cancel_requested}>
+              {run.cancel_requested ? 'Stopping...' : stopping ? 'Stopping...' : 'Stop'}
+            </button>
+          )}
           <button className="btn-ghost" onClick={() => open({ workflow: run.workflow_name })}>
             Rerun
           </button>
@@ -88,6 +107,7 @@ export default function RunDetail() {
           <dd>{String(run.promote)}</dd>
         </dl>
         {run.error && <p className="error run-error">{run.error}</p>}
+        {stopError && <p className="error run-error">{stopError}</p>}
       </div>
 
       <h2>Stages</h2>

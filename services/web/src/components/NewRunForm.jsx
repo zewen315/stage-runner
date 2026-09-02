@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getResource, listStages, listVersions, listWorkflows, requestRun } from '../api.js'
+import { createRecurringSchedule, getResource, listStages, listVersions, listWorkflows, requestRun } from '../api.js'
 
 const BEGINNING = ''
 
@@ -8,12 +8,14 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
   const [workflowName, setWorkflowName] = useState(initialWorkflow)
   const [loadError, setLoadError] = useState(null)
 
+  const [mode, setMode] = useState('once') // 'once' | 'recurring'
   const [stages, setStages] = useState([])
   const [startFrom, setStartFrom] = useState(BEGINNING)
   const [justThisStage, setJustThisStage] = useState(false)
   const [inputs, setInputs] = useState([]) // [{ key, versions: [numbers], value }]
   const [promote, setPromote] = useState(false)
   const [runAt, setRunAt] = useState('') // datetime-local string, browser-local time; '' = now
+  const [cron, setCron] = useState('')
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -87,6 +89,10 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
       setFormError('Choose a workflow.')
       return
     }
+    if (mode === 'recurring' && !cron.trim()) {
+      setFormError('Enter a cron expression.')
+      return
+    }
 
     const body = {}
     if (startFrom !== BEGINNING) {
@@ -105,11 +111,16 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
       body.input_versions = inputVersions
     }
     if (promote) body.promote = true
-    if (runAt) body.run_at = new Date(runAt).toISOString()
 
     setSubmitting(true)
     try {
-      await requestRun(workflowName, body)
+      if (mode === 'once') {
+        if (runAt) body.run_at = new Date(runAt).toISOString()
+        await requestRun(workflowName, body)
+      } else {
+        body.cron_expression = cron.trim()
+        await createRecurringSchedule(workflowName, body)
+      }
       onDone()
     } catch (err) {
       setFormError(err.message)
@@ -135,6 +146,17 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
             ))}
           </select>
         </label>
+
+        <div className="radio-group">
+          <label className="radio-option">
+            <input type="radio" checked={mode === 'once'} onChange={() => setMode('once')} />
+            One time
+          </label>
+          <label className="radio-option">
+            <input type="radio" checked={mode === 'recurring'} onChange={() => setMode('recurring')} />
+            Recurring
+          </label>
+        </div>
 
         <label>
           Start from
@@ -190,10 +212,23 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
           Promote produced versions to current
         </label>
 
-        <label>
-          Run at <span className="hint-inline">(optional -- leave blank to run now)</span>
-          <input type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} />
-        </label>
+        {mode === 'once' ? (
+          <label>
+            Run at <span className="hint-inline">(optional -- leave blank to run now)</span>
+            <input type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} />
+          </label>
+        ) : (
+          <label>
+            Cron expression
+            <input
+              className="mono"
+              value={cron}
+              onChange={(e) => setCron(e.target.value)}
+              placeholder="0 * * * *"
+            />
+            <span className="hint-inline">standard 5-field cron, e.g. "0 * * * *" for every hour</span>
+          </label>
+        )}
 
         {formError && <p className="error">{formError}</p>}
 
@@ -202,7 +237,13 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
             Cancel
           </button>
           <button type="submit" className="btn-primary" disabled={submitting || !workflowName}>
-            {submitting ? 'Requesting...' : runAt ? 'Schedule run' : 'Trigger run'}
+            {submitting
+              ? 'Requesting...'
+              : mode === 'recurring'
+                ? 'Create recurring schedule'
+                : runAt
+                  ? 'Schedule run'
+                  : 'Trigger run'}
           </button>
         </div>
       </form>

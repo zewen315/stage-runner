@@ -50,12 +50,33 @@ export function requestRun(workflowName, body) {
   })
 }
 
+export function cancelRun(workflowName, runId) {
+  return request(`/workflows/${workflowName}/runs/${runId}/cancel`, { method: 'POST' })
+}
+
 export function getSchedule(workflowName, scheduleId) {
   return request(`/workflows/${workflowName}/schedules/${scheduleId}`)
 }
 
 export function listPendingSchedules(workflowName) {
   return request(`/workflows/${workflowName}/schedules`)
+}
+
+export function listRecurringSchedules(workflowName) {
+  return request(`/workflows/${workflowName}/recurring-schedules`)
+}
+
+export function createRecurringSchedule(workflowName, body) {
+  return request(`/workflows/${workflowName}/recurring-schedules`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function cancelRecurringSchedule(workflowName, recurringScheduleId) {
+  return request(`/workflows/${workflowName}/recurring-schedules/${recurringScheduleId}/cancel`, {
+    method: 'POST',
+  })
 }
 
 export function listResources() {

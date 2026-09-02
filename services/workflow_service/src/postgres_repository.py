@@ -21,17 +21,20 @@ from models import RecurringSchedule, RunStatus, Schedule, StageRun, WorkflowRun
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
-    id             BIGSERIAL PRIMARY KEY,
-    workflow_name  TEXT NOT NULL,
-    start_from     TEXT,
-    stop_after     TEXT,
-    input_versions JSONB,
-    promote        BOOLEAN NOT NULL,
-    status         TEXT NOT NULL,
-    requested_at   TIMESTAMPTZ NOT NULL,
-    started_at     TIMESTAMPTZ,
-    finished_at    TIMESTAMPTZ,
-    error          TEXT
+    id                BIGSERIAL PRIMARY KEY,
+    workflow_name     TEXT NOT NULL,
+    start_from        TEXT,
+    stop_after        TEXT,
+    input_versions    JSONB,
+    promote           BOOLEAN NOT NULL,
+    status            TEXT NOT NULL,
+    requested_at      TIMESTAMPTZ NOT NULL,
+    started_at        TIMESTAMPTZ,
+    finished_at       TIMESTAMPTZ,
+    error             TEXT,
+    -- Set by workflow_service's request_cancel(); the Scheduler is still
+    -- the only thing that ever changes `status`, on its next tick.
+    cancel_requested  BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS stage_runs (
@@ -252,6 +255,11 @@ class PostgresRecurringScheduleRepository:
 
 
 class PostgresWorkflowRunRepository:
+    _COLUMNS = (
+        "id, workflow_name, start_from, stop_after, input_versions, promote, "
+        "status, requested_at, started_at, finished_at, error, cancel_requested"
+    )
+
     def __init__(self, dsn: str):
         self._conn = psycopg.connect(dsn, autocommit=True)
         with self._conn.cursor() as cur:
@@ -274,16 +282,13 @@ class PostgresWorkflowRunRepository:
             started_at=row[8].isoformat() if row[8] else None,
             finished_at=row[9].isoformat() if row[9] else None,
             error=row[10],
+            cancel_requested=row[11],
         )
 
     def get(self, workflow_name: str, run_id: int) -> WorkflowRun | None:
         with self._conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
-                       status, requested_at, started_at, finished_at, error
-                FROM runs WHERE id = %s AND workflow_name = %s
-                """,
+                f"SELECT {self._COLUMNS} FROM runs WHERE id = %s AND workflow_name = %s",
                 (run_id, workflow_name),
             )
             row = cur.fetchone()
@@ -292,14 +297,14 @@ class PostgresWorkflowRunRepository:
     def list_for_workflow(self, workflow_name: str, limit: int) -> list[WorkflowRun]:
         with self._conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
-                       status, requested_at, started_at, finished_at, error
-                FROM runs WHERE workflow_name = %s ORDER BY id DESC LIMIT %s
-                """,
+                f"SELECT {self._COLUMNS} FROM runs WHERE workflow_name = %s ORDER BY id DESC LIMIT %s",
                 (workflow_name, limit),
             )
             return [self._run_from_row(row) for row in cur.fetchall()]
+
+    def mark_cancel_requested(self, run_id: int) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute("UPDATE runs SET cancel_requested = true WHERE id = %s", (run_id,))
 
 
 class PostgresStageRunRepository:

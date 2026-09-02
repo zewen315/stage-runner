@@ -66,6 +66,12 @@ class WorkflowRunRepository(Protocol):
         """Most-recent-first."""
         ...
 
+    def mark_cancel_requested(self, run_id: int) -> None:
+        """Records intent only -- the Scheduler is still the one that
+        actually changes `status`, on its next tick, the same hand-off
+        `run_at` already uses."""
+        ...
+
 
 class StageRunRepository(Protocol):
     def get(self, workflow_name: str, stage_run_id: int) -> StageRun | None: ...

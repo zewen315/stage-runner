@@ -20,3 +20,8 @@ class RecurringScheduleNotFoundError(Exception):
 
 class InvalidCronExpressionError(Exception):
     """Raised when a recurring schedule's cron_expression can't be parsed."""
+
+
+class RunNotCancellableError(Exception):
+    """Raised when trying to cancel a run that's already terminal
+    (completed, failed, or already cancelled)."""

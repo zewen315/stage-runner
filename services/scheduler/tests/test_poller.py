@@ -303,6 +303,40 @@ class TestProgression:
         assert store.active_workflow_runs() == []
 
 
+class TestCancellation:
+    def test_cancel_requested_marks_cancelled_and_dispatches_nothing(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        run_id = store.add_workflow_run("feed_ranking")
+        store.request_cancel(run_id)
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
+    def test_cancelling_mid_run_stops_further_dispatch_but_keeps_completed_stages(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        run_id = store.add_workflow_run("feed_ranking", status="running")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        store.request_cancel(run_id)
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert queue.enqueued == []  # "doubled" never dispatched, even though "raw" is done
+        assert store.active_workflow_runs() == []
+
+    def test_a_run_with_no_cancel_requested_is_unaffected(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_workflow_run("feed_ranking")
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
+
+
 class TestStartFrom:
     def test_skips_upstream_stages_and_seeds_from_input_versions(self):
         store = InMemoryScheduleStore()

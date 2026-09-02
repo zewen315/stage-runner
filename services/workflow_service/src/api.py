@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict
 from errors import (
     InvalidCronExpressionError,
     RecurringScheduleNotFoundError,
+    RunNotCancellableError,
     RunNotFoundError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
@@ -114,6 +115,11 @@ async def handle_invalid_cron_expression(request: Request, exc: InvalidCronExpre
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
+@app.exception_handler(RunNotCancellableError)
+async def handle_run_not_cancellable(request: Request, exc: RunNotCancellableError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
 class ScheduleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -140,6 +146,7 @@ class WorkflowRunResponse(BaseModel):
     started_at: str | None
     finished_at: str | None
     error: str | None
+    cancel_requested: bool
 
 
 class StageRunResponse(BaseModel):
@@ -269,6 +276,11 @@ def list_runs(name: str, limit: int = 50, service: WorkflowService = Depends(get
 @app.get("/workflows/{name}/runs/{run_id}", response_model=WorkflowRunResponse)
 def get_run(name: str, run_id: int, service: WorkflowService = Depends(get_service)):
     return service.get_run(name, run_id)
+
+
+@app.post("/workflows/{name}/runs/{run_id}/cancel", status_code=204)
+def request_cancel(name: str, run_id: int, service: WorkflowService = Depends(get_service)) -> None:
+    service.request_cancel(name, run_id)
 
 
 @app.get("/workflows/{name}/runs/{run_id}/stage-runs", response_model=list[StageRunResponse])

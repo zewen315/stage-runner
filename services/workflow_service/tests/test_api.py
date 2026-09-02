@@ -220,6 +220,27 @@ def test_get_run_unknown_is_404(client):
     assert response.status_code == 404
 
 
+def test_request_cancel_marks_cancel_requested(client, workflow_runs):
+    workflow_runs.add(_workflow_run(id=1, status=RunStatus.RUNNING))
+
+    response = client.post("/workflows/feed_ranking/runs/1/cancel")
+    assert response.status_code == 204
+
+    assert client.get("/workflows/feed_ranking/runs/1").json()["cancel_requested"] is True
+
+
+def test_request_cancel_terminal_run_is_409(client, workflow_runs):
+    workflow_runs.add(_workflow_run(id=1, status=RunStatus.COMPLETED, finished_at=NOW))
+
+    response = client.post("/workflows/feed_ranking/runs/1/cancel")
+    assert response.status_code == 409
+
+
+def test_request_cancel_unknown_run_is_404(client):
+    response = client.post("/workflows/feed_ranking/runs/999/cancel")
+    assert response.status_code == 404
+
+
 def test_list_workflows(client):
     response = client.get("/workflows")
 

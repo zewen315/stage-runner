@@ -5,6 +5,7 @@ import pytest
 from errors import (
     InvalidCronExpressionError,
     RecurringScheduleNotFoundError,
+    RunNotCancellableError,
     RunNotFoundError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
@@ -291,6 +292,33 @@ class TestGetRun:
     def test_unknown_run_raises(self, service):
         with pytest.raises(RunNotFoundError):
             service.get_run("feed_ranking", 999)
+
+
+class TestRequestCancel:
+    def test_marks_cancel_requested_on_a_running_run(self, service, workflow_runs):
+        seeded = _seed_workflow_run(workflow_runs, status=RunStatus.RUNNING)
+
+        service.request_cancel("feed_ranking", seeded.id)
+
+        assert service.get_run("feed_ranking", seeded.id).cancel_requested is True
+
+    def test_works_on_a_requested_run_too(self, service, workflow_runs):
+        seeded = _seed_workflow_run(workflow_runs, status=RunStatus.REQUESTED)
+
+        service.request_cancel("feed_ranking", seeded.id)
+
+        assert service.get_run("feed_ranking", seeded.id).cancel_requested is True
+
+    @pytest.mark.parametrize("status", [RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED])
+    def test_terminal_run_raises(self, service, workflow_runs, status):
+        seeded = _seed_workflow_run(workflow_runs, status=status)
+
+        with pytest.raises(RunNotCancellableError):
+            service.request_cancel("feed_ranking", seeded.id)
+
+    def test_unknown_run_raises(self, service):
+        with pytest.raises(RunNotFoundError):
+            service.request_cancel("feed_ranking", 999)
 
 
 class TestListStageRunsForRun:

@@ -125,6 +125,9 @@ class InMemoryWorkflowRunRepository:
         matching = [r for r in self._runs.values() if r.workflow_name == workflow_name]
         return sorted(matching, key=lambda r: r.id, reverse=True)[:limit]
 
+    def mark_cancel_requested(self, run_id: int) -> None:
+        self._runs[run_id] = replace(self._runs[run_id], cancel_requested=True)
+
 
 class InMemoryStageRunRepository:
     def __init__(self) -> None:

@@ -12,7 +12,13 @@ Three phases, all re-run every tick:
   specify one: true only for a full run (`start_from` and `stop_after`
   both unset), false for any partial one.
 - progression: for every in-flight `WorkflowRun`, dispatch a `StageRun`
-  for each *reachable* stage whose dependencies are all complete.
+  for each *reachable* stage whose dependencies are all complete -- unless
+  `cancel_requested` is set (workflow_service's request_cancel(), the
+  only other thing besides this poller that ever touches a WorkflowRun
+  row), in which case it's marked `cancelled` immediately and nothing
+  further is dispatched for it. A stage already dispatched to the Runner
+  before that point keeps running to completion regardless -- nothing
+  here reaches into Redis or a container to stop it.
   `start_from`/`stop_after` narrow a run to a sub-range of the DAG: when
   `start_from` is set, only it and stages that transitively depend on it
   are ever dispatched (`dag.reachable_from`) -- everything upstream is
@@ -106,6 +112,10 @@ def _progress(
     store: ScheduleStore, queue: RunQueue, registry_provider: RegistryProvider, resources: ResourceClient
 ) -> None:
     for run in store.active_workflow_runs():
+        if run.cancel_requested:
+            store.mark_workflow_run_cancelled(run.id)
+            continue
+
         try:
             registry = registry_provider(run.workflow_name)
             order = topological_order(registry.all())

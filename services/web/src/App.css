@@ -19,6 +19,8 @@
   --failed-bg: #fee2e2;
   --skipped: #9ca3af;
   --skipped-bg: #f3f4f6;
+  --cancelled: #7c3aed;
+  --cancelled-bg: #ede9fe;
 }
 
 * {
@@ -277,6 +279,10 @@ a.run-card:hover {
   border-left-color: var(--border);
 }
 
+.status-border-cancelled {
+  border-left-color: var(--cancelled);
+}
+
 .run-card-top {
   display: flex;
   align-items: center;
@@ -296,6 +302,10 @@ a.run-card:hover {
   margin-top: 0.3rem;
   font-size: 0.72rem;
   color: var(--text-muted);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .workflow-pill {
@@ -347,6 +357,11 @@ a.run-card:hover {
 .status-skipped {
   background: var(--skipped-bg);
   color: var(--skipped);
+}
+
+.status-cancelled {
+  background: var(--cancelled-bg);
+  color: var(--cancelled);
 }
 
 /* -- run detail ------------------------------------------------------- */

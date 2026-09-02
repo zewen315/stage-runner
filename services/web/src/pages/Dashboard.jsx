@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listPendingSchedules, listRuns, listWorkflows } from '../api.js'
+import { listPendingSchedules, listRecurringSchedules, listRuns, listWorkflows } from '../api.js'
 
 const POLL_MS = 3000
 const ONGOING_STATUSES = new Set(['requested', 'running'])
@@ -20,9 +20,10 @@ export default function Dashboard() {
   const load = useCallback(async () => {
     try {
       const workflows = await listWorkflows()
-      const [runsByWorkflow, schedulesByWorkflow] = await Promise.all([
+      const [runsByWorkflow, pendingByWorkflow, recurringByWorkflow] = await Promise.all([
         Promise.all(workflows.map((name) => listRuns(name, FINISHED_LIMIT))),
         Promise.all(workflows.map((name) => listPendingSchedules(name))),
+        Promise.all(workflows.map((name) => listRecurringSchedules(name))),
       ])
 
       const allRuns = runsByWorkflow.flat()
@@ -34,7 +35,13 @@ export default function Dashboard() {
           .sort(byIdDesc)
           .slice(0, FINISHED_LIMIT),
       )
-      setScheduled(schedulesByWorkflow.flat().sort(byIdDesc))
+
+      const pending = pendingByWorkflow.flat().sort(byIdDesc)
+      const recurring = recurringByWorkflow
+        .flat()
+        .filter((r) => r.enabled)
+        .sort((a, b) => a.next_run_at.localeCompare(b.next_run_at))
+      setScheduled([...pending, ...recurring])
       setError(null)
     } catch (e) {
       setError(e.message)
@@ -66,7 +73,13 @@ export default function Dashboard() {
         {scheduled.length === 0 ? (
           <EmptyState text="No runs waiting to start." />
         ) : (
-          scheduled.map((s) => <ScheduleCard key={s.id} schedule={s} />)
+          scheduled.map((item) =>
+            item.cron_expression ? (
+              <RecurringScheduleCard key={`recurring-${item.id}`} schedule={item} />
+            ) : (
+              <ScheduleCard key={`once-${item.id}`} schedule={item} />
+            ),
+          )
         )}
       </Column>
 
@@ -128,6 +141,23 @@ function ScheduleCard({ schedule }) {
         {schedule.stop_after && <span>to {schedule.stop_after}</span>}
       </div>
       {schedule.run_at && <div className="run-card-time">at {formatTime(schedule.run_at)}</div>}
+    </div>
+  )
+}
+
+function RecurringScheduleCard({ schedule }) {
+  return (
+    <div className="run-card status-border-requested">
+      <div className="run-card-top">
+        <span className="workflow-pill">{schedule.workflow_name}</span>
+        <span className="status status-requested">recurring</span>
+      </div>
+      <div className="run-card-meta">
+        <span className="mono">{schedule.cron_expression}</span>
+        {schedule.start_from && <span>from {schedule.start_from}</span>}
+        {schedule.stop_after && <span>to {schedule.stop_after}</span>}
+      </div>
+      <div className="run-card-time">next at {formatTime(schedule.next_run_at)}</div>
     </div>
   )
 }

@@ -76,6 +76,7 @@ class InMemoryScheduleStore:
         input_versions: dict[str, int] | None = None,
         promote: bool = True,
         status: str = "requested",
+        cancel_requested: bool = False,
     ) -> int:
         run_id = self._next_run_id
         self._runs[run_id] = {
@@ -86,9 +87,16 @@ class InMemoryScheduleStore:
             "promote": promote,
             "status": status,
             "error": None,
+            "cancel_requested": cancel_requested,
         }
         self._next_run_id += 1
         return run_id
+
+    def request_cancel(self, run_id: int) -> None:
+        """Test-seeding helper: real cancellation requests land on
+        workflow_service, not this store -- tests use this to simulate
+        "a cancel was already requested" ahead of a poll."""
+        self._runs[run_id]["cancel_requested"] = True
 
     def add_stage_run(
         self,
@@ -190,6 +198,7 @@ class InMemoryScheduleStore:
                 input_versions=r["input_versions"],
                 promote=r["promote"],
                 status=r["status"],
+                cancel_requested=r["cancel_requested"],
             )
             for rid, r in self._runs.items()
             if r["status"] in ("requested", "running")
@@ -216,6 +225,9 @@ class InMemoryScheduleStore:
     def mark_workflow_run_failed(self, run_id: int, error: str) -> None:
         self._runs[run_id]["status"] = "failed"
         self._runs[run_id]["error"] = error
+
+    def mark_workflow_run_cancelled(self, run_id: int) -> None:
+        self._runs[run_id]["status"] = "cancelled"
 
 
 class InMemoryRunQueue:

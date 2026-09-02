@@ -38,6 +38,7 @@ class ActiveWorkflowRun:
     input_versions: dict[str, int] | None
     promote: bool
     status: str
+    cancel_requested: bool = False
 
 
 @dataclass(frozen=True)

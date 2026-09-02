@@ -22,6 +22,7 @@ from workflow_loader import load_workflow
 from errors import (
     InvalidCronExpressionError,
     RecurringScheduleNotFoundError,
+    RunNotCancellableError,
     RunNotFoundError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
@@ -231,6 +232,19 @@ class WorkflowService:
 
     def get_run(self, workflow_name: str, run_id: int) -> WorkflowRun:
         return self._require_run(workflow_name, run_id)
+
+    def request_cancel(self, workflow_name: str, run_id: int) -> None:
+        """Client-facing: ask an in-flight run to stop. Records intent
+        only -- the Scheduler is still the sole thing that changes
+        `status`, on its next tick, so the run may briefly still show
+        "running" right after this returns. A stage already dispatched to
+        the Runner keeps executing; nothing here reaches into Redis or a
+        container to interrupt it, only stops anything from being
+        dispatched *after* this."""
+        run = self._require_run(workflow_name, run_id)
+        if run.status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED):
+            raise RunNotCancellableError(f"run {run_id} is already {run.status.value}")
+        self._workflow_runs.mark_cancel_requested(run_id)
 
     def list_runs(self, workflow_name: str, limit: int = 50) -> list[WorkflowRun]:
         self._require_workflow(workflow_name)
