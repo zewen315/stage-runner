@@ -1,0 +1,12 @@
+[project]
+name = "stage-runner-system-tests"
+version = "0.1.0"
+description = "End-to-end tests against the full docker-compose stack (all services, real Postgres/Redis/MinIO/gateway) over HTTP -- the same interface the CLI and web UI use, nothing mocked"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "httpx>=0.28.1",
+]

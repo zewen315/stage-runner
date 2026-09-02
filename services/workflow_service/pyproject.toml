@@ -14,7 +14,12 @@ dependencies = [
 dev = [
     "pytest>=9.1.1",
     "httpx>=0.28.1",
+    "testcontainers[postgres]>=4.9.0",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "../../lib"]
+markers = [
+    "integration: exercises a real Postgres via testcontainers (needs Docker) -- excluded by default, run with -m integration",
+]
+addopts = "-m 'not integration'"

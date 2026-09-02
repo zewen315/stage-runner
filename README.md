@@ -179,19 +179,42 @@ workflows/           workflow definitions (see "Defining a workflow" above)
 resources/           declared contracts, one file per resource name
 gateway/             nginx: serves the built web app, proxies /resources and /workflows
 seed_data/           sample raw_events.json for the quickstart
+system_tests/        end-to-end tests against the real, running stack (see "Tests" below)
 ```
 
 ## Tests
 
-Each Python service is independently testable, no Docker required:
+Three layers, each catching what the one below it structurally can't.
+
+**Unit** — one service's own logic in isolation, against in-memory fakes (see each
+service's `ports.py`/`memory.py`). No Docker, no network, runs in milliseconds:
 
 ```
 cd services/<resource_store|workflow_service|scheduler|runner> && uv run pytest
 cd cli && uv run pytest
+cd services/web && npm test          # pure logic only -- DAG layout, pagination
 ```
 
-The web app's unit tests (pure logic — DAG layout, pagination — not component rendering):
+**Integration** — the real Postgres-backed repository classes against an actual,
+ephemeral Postgres (via `testcontainers`, one per test module), instead of the in-memory
+fakes the unit tests use for the same interfaces. Catches what a fake can't: wrong SQL, a
+bad column name, a migration that doesn't match the code. Needs Docker; excluded from the
+default `pytest` run, so it never slows down the unit suite above:
 
 ```
-cd services/web && npm test
+cd services/<resource_store|workflow_service|scheduler> && uv run pytest -m integration
+```
+
+**System** — the whole stack, actually running, driven entirely over HTTP (the same
+interface the CLI and web UI use) — nothing mocked, nothing in-process. Each test mirrors
+a behavior from "Concepts" above: a full run promoting every stage, a branching workflow's
+parallel dispatch and fan-in, an `on_failure` override, cancelling a run vs. a pending
+schedule, a recurring schedule firing and being cancelled. Needs the stack already running
+(`docker compose up --build -d` first — the suite skips with a clear message otherwise) and
+is slow by nature (the demo workflows each sleep 10s per stage, for the same reason the
+Scheduler's dispatch is visible live in `docker compose logs`) — this layer runs less often
+than the two above, not on every change:
+
+```
+cd system_tests && uv run pytest
 ```

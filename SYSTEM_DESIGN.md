@@ -41,10 +41,14 @@ API) — with full visibility into run history via the web UI and CLI.
    fan-out/fan-in dispatch (multiple ready stages at once, a stage waiting on several
    dependencies) is now core, not a stretch goal, since it costs nothing extra in the
    dispatch loop's own design once the graph itself isn't assumed to be a chain.
-3. **Testability** — core logic (DAG resolution, validation, dispatch/fallback, retry) is
-   unit-tested without Docker, across independent per-service test suites; the checked-in
-   `workflows/feed_*` packages double as end-to-end regression fixtures, each exercising one
-   specific behavior (happy path, crash, timeout, validation failure, fallback, branching).
+3. **Testability** — three layers, each catching what the one below it can't (see
+   "Tests" in `README.md` for how to run each): unit tests exercise one service's logic
+   against in-memory fakes, no Docker required; integration tests exercise the real
+   Postgres-backed repositories against an ephemeral Postgres (`testcontainers`), catching
+   wrong SQL a fake can't; system tests drive the actual running stack end to end over HTTP,
+   with the checked-in `workflows/feed_*` packages doing double duty as both live demo
+   fixtures and what those system tests trigger, each exercising one specific behavior
+   (happy path, crash, timeout, validation failure, fallback, branching).
 4. **Auditability** — every resource version and stage run is retained (append-only), so a
    failure, retry, or fallback is explainable after the fact from the run's own record, not
    just from logs.
