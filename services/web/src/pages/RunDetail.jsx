@@ -84,16 +84,9 @@ export default function RunDetail() {
               <span className={`status status-${sr.status}`}>{sr.status}</span>
             </div>
             <div className="stage-card-meta">
-              <span>in: {formatVersions(sr.input_versions)}</span>
+              <span>in: {formatResources(sr.input_versions)}</span>
               <span>
-                out:{' '}
-                {sr.output_version != null ? (
-                  <Link to={`/resources/${sr.stage_name}?version=${sr.output_version}`}>
-                    v{sr.output_version}
-                  </Link>
-                ) : (
-                  '—'
-                )}
+                out: {sr.output_version != null ? <ResourceLink name={sr.stage_name} version={sr.output_version} /> : '—'}
               </span>
             </div>
             {sr.error && <p className="error">{sr.error}</p>}
@@ -104,15 +97,21 @@ export default function RunDetail() {
   )
 }
 
-function formatVersions(versions) {
+function ResourceLink({ name, version }) {
+  return (
+    <Link to={`/resources/${name}?version=${version}`}>
+      {name}:{version}
+    </Link>
+  )
+}
+
+function formatResources(versions) {
   const entries = Object.entries(versions || {})
   if (entries.length === 0) return '(none)'
   return entries.map(([name, version], i) => (
     <span key={name}>
       {i > 0 && ', '}
-      <Link to={`/resources/${name}?version=${version}`}>
-        {name} v{version}
-      </Link>
+      <ResourceLink name={name} version={version} />
     </span>
   ))
 }
