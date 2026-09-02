@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { listRuns, listStages } from '../api.js'
+import RunCard from '../components/RunCard.jsx'
 import WorkflowGraph from '../components/WorkflowGraph.jsx'
 import { depthLevels } from '../dagLayout.js'
 import { useNewRunModal } from '../NewRunModalContext.jsx'
@@ -92,25 +93,12 @@ export default function WorkflowDetail() {
       {runs.length === 0 ? (
         <p className="muted">No runs yet.</p>
       ) : (
-        <div className="mini-run-list">
+        <div className="run-card-grid">
           {runs.map((r) => (
-            <Link key={r.id} to={`/workflows/${name}/runs/${r.id}`} className="mini-run-row">
-              <span className={`status status-${r.status}`}>{r.status}</span>
-              <span>run #{r.id}</span>
-              <span className="mini-run-time">{formatTime(r.requested_at)}</span>
-            </Link>
+            <RunCard key={r.id} run={r} showWorkflow={false} />
           ))}
         </div>
       )}
     </div>
   )
-}
-
-function formatTime(iso) {
-  if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleString()
-  } catch {
-    return iso
-  }
 }

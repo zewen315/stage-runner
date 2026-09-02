@@ -266,6 +266,25 @@ button {
   text-align: center;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+}
+
+.pagination-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.run-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+
 /* -- cards ------------------------------------------------------------ */
 
 .card {
@@ -310,34 +329,6 @@ a.entity-card-link:hover {
 .entity-card-empty {
   margin: 0.5rem 0 0;
   font-size: 0.82rem;
-}
-
-.mini-run-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  margin-top: 0.6rem;
-}
-
-.mini-run-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.35rem 0.5rem;
-  border-radius: 6px;
-  text-decoration: none;
-  color: inherit;
-  font-size: 0.82rem;
-}
-
-.mini-run-row:hover {
-  background: var(--bg);
-}
-
-.mini-run-time {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: 0.76rem;
 }
 
 .run-card {

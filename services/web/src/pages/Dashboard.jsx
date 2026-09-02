@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listPendingSchedules, listRecurringSchedules, listRuns, listWorkflows } from '../api.js'
+import Pagination, { paginate } from '../components/Pagination.jsx'
+import RunCard from '../components/RunCard.jsx'
 
 const POLL_MS = 3000
+const PAGE_SIZE = 10
+// Per-workflow fetch depth for runs -- deeper than PAGE_SIZE since it
+// covers both the Ongoing and Finished columns at once, combined across
+// every workflow, and Finished now paginates instead of hard-capping at
+// one page's worth.
+const RUN_FETCH_LIMIT = 50
 const ONGOING_STATUSES = new Set(['requested', 'running'])
-const FINISHED_LIMIT = 20
 
 function byIdDesc(a, b) {
   return b.id - a.id
@@ -17,11 +24,15 @@ export default function Dashboard() {
   const [error, setError] = useState(null)
   const [loaded, setLoaded] = useState(false)
 
+  const [scheduledPage, setScheduledPage] = useState(1)
+  const [ongoingPage, setOngoingPage] = useState(1)
+  const [finishedPage, setFinishedPage] = useState(1)
+
   const load = useCallback(async () => {
     try {
       const workflows = await listWorkflows()
       const [runsByWorkflow, pendingByWorkflow, recurringByWorkflow] = await Promise.all([
-        Promise.all(workflows.map((name) => listRuns(name, FINISHED_LIMIT))),
+        Promise.all(workflows.map((name) => listRuns(name, RUN_FETCH_LIMIT))),
         Promise.all(workflows.map((name) => listPendingSchedules(name))),
         Promise.all(workflows.map((name) => listRecurringSchedules(name))),
       ])
@@ -29,12 +40,7 @@ export default function Dashboard() {
       const allRuns = runsByWorkflow.flat()
 
       setOngoing(allRuns.filter((r) => ONGOING_STATUSES.has(r.status)).sort(byIdDesc))
-      setFinished(
-        allRuns
-          .filter((r) => !ONGOING_STATUSES.has(r.status))
-          .sort(byIdDesc)
-          .slice(0, FINISHED_LIMIT),
-      )
+      setFinished(allRuns.filter((r) => !ONGOING_STATUSES.has(r.status)).sort(byIdDesc))
 
       const pending = pendingByWorkflow.flat().sort(byIdDesc)
       const recurring = recurringByWorkflow
@@ -59,32 +65,44 @@ export default function Dashboard() {
   if (error) return <p className="error">{error}</p>
   if (!loaded) return <p className="muted">Loading...</p>
 
+  const scheduledView = paginate(scheduled, scheduledPage, PAGE_SIZE)
+  const ongoingView = paginate(ongoing, ongoingPage, PAGE_SIZE)
+  const finishedView = paginate(finished, finishedPage, PAGE_SIZE)
+
   return (
     <div className="dashboard">
-      <Column title="Ongoing" count={ongoing.length} accent="running">
-        {ongoing.length === 0 ? (
-          <EmptyState text="Nothing running right now." />
-        ) : (
-          ongoing.map((run) => <RunCard key={run.id} run={run} />)
-        )}
-      </Column>
-
       <Column title="Scheduled" count={scheduled.length} accent="requested">
         {scheduled.length === 0 ? (
           <EmptyState text="No runs waiting to start." />
         ) : (
-          scheduled.map((item) =>
-            // Recurring schedules always carry next_run_at; one-time
-            // schedules never do. cron_expression alone doesn't work as
-            // the discriminator -- it's null for an interval-based
-            // recurring schedule too, which would otherwise misrender it
-            // as (and link it to) an unrelated one-time schedule.
-            item.next_run_at != null ? (
-              <RecurringScheduleCard key={`recurring-${item.id}`} schedule={item} />
-            ) : (
-              <ScheduleCard key={`once-${item.id}`} schedule={item} />
-            ),
-          )
+          <>
+            {scheduledView.items.map((item) =>
+              // Recurring schedules always carry next_run_at; one-time
+              // schedules never do. cron_expression alone doesn't work as
+              // the discriminator -- it's null for an interval-based
+              // recurring schedule too, which would otherwise misrender it
+              // as (and link it to) an unrelated one-time schedule.
+              item.next_run_at != null ? (
+                <RecurringScheduleCard key={`recurring-${item.id}`} schedule={item} />
+              ) : (
+                <ScheduleCard key={`once-${item.id}`} schedule={item} />
+              ),
+            )}
+            <Pagination page={scheduledView.page} totalPages={scheduledView.totalPages} onChange={setScheduledPage} />
+          </>
+        )}
+      </Column>
+
+      <Column title="Ongoing" count={ongoing.length} accent="running">
+        {ongoing.length === 0 ? (
+          <EmptyState text="Nothing running right now." />
+        ) : (
+          <>
+            {ongoingView.items.map((run) => (
+              <RunCard key={run.id} run={run} />
+            ))}
+            <Pagination page={ongoingView.page} totalPages={ongoingView.totalPages} onChange={setOngoingPage} />
+          </>
         )}
       </Column>
 
@@ -92,7 +110,12 @@ export default function Dashboard() {
         {finished.length === 0 ? (
           <EmptyState text="Nothing has finished yet." />
         ) : (
-          finished.map((run) => <RunCard key={run.id} run={run} />)
+          <>
+            {finishedView.items.map((run) => (
+              <RunCard key={run.id} run={run} />
+            ))}
+            <Pagination page={finishedView.page} totalPages={finishedView.totalPages} onChange={setFinishedPage} />
+          </>
         )}
       </Column>
     </div>
@@ -114,23 +137,6 @@ function Column({ title, count, accent, children }) {
 
 function EmptyState({ text }) {
   return <p className="empty-state">{text}</p>
-}
-
-function RunCard({ run }) {
-  return (
-    <Link to={`/workflows/${run.workflow_name}/runs/${run.id}`} className={`run-card status-border-${run.status}`}>
-      <div className="run-card-top">
-        <span className="workflow-pill">{run.workflow_name}</span>
-        <span className={`status status-${run.status}`}>{run.status}</span>
-      </div>
-      <div className="run-card-meta">
-        <span>run #{run.id}</span>
-        {run.start_from && <span>from {run.start_from}</span>}
-        {run.stop_after && <span>to {run.stop_after}</span>}
-      </div>
-      <div className="run-card-time">{formatTime(run.requested_at)}</div>
-    </Link>
-  )
 }
 
 function ScheduleCard({ schedule }) {
