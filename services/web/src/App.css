@@ -525,23 +525,6 @@ a.run-card:hover {
   gap: 0.6rem;
 }
 
-.stage-row {
-  display: flex;
-  gap: 0.6rem;
-  align-items: stretch;
-}
-
-.stage-row > * {
-  flex: 1;
-  min-width: 0;
-}
-
-@media (max-width: 640px) {
-  .stage-row {
-    flex-direction: column;
-  }
-}
-
 .stage-card {
   background: var(--surface);
   border: 1px solid var(--border);

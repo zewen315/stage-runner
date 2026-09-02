@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { cancelRun, getRun, listStageRuns, listStages } from '../api.js'
-import { depthLevels } from '../dagLayout.js'
 import { useNewRunModal } from '../NewRunModalContext.jsx'
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
@@ -67,7 +66,7 @@ export default function RunDetail() {
   const stageRunByName = Object.fromEntries(stageRuns.map((sr) => [sr.stage_name, sr]))
 
   return (
-    <div className="page-wide">
+    <div className="page-narrow">
       <p>
         <Link to="/" className="back-link">
           &larr; Dashboard
@@ -83,9 +82,6 @@ export default function RunDetail() {
         </div>
         <div className="run-header-actions">
           <span className={`status status-lg status-${run.status}`}>{run.status}</span>
-          <Link to={`/workflows/${run.workflow_name}`} className="btn-ghost">
-            View workflow structure
-          </Link>
           {!TERMINAL.has(run.status) && (
             <button className="btn-ghost" onClick={handleStop} disabled={stopping || run.cancel_requested}>
               {run.cancel_requested ? 'Stopping...' : stopping ? 'Stopping...' : 'Stop'}
@@ -120,19 +116,21 @@ export default function RunDetail() {
 
       <h2>Stages</h2>
       <div className="stage-list">
-        {depthLevels(stages).map((level, i) => (
-          <div key={i} className="stage-row">
-            {level.map((stage) => {
-              const sr = stageRunByName[stage.name]
-              const onRunFromHere = () => open({ workflow: run.workflow_name, startFrom: stage.name })
-              return sr ? (
-                <RanStageCard key={stage.name} sr={sr} onRunFromHere={onRunFromHere} />
-              ) : (
-                <NotRunStageCard key={stage.name} stage={stage} onRunFromHere={onRunFromHere} />
-              )
-            })}
-          </div>
-        ))}
+        {stages.map((stage) => {
+          const sr = stageRunByName[stage.name]
+          const onRunFromHere = () => open({ workflow: run.workflow_name, startFrom: stage.name })
+          return sr ? (
+            <RanStageCard key={stage.name} sr={sr} onRunFromHere={onRunFromHere} />
+          ) : (
+            <NotRunStageCard key={stage.name} stage={stage} onRunFromHere={onRunFromHere} />
+          )
+        })}
+      </div>
+
+      <div className="row-actions row-actions-top">
+        <Link to={`/workflows/${run.workflow_name}`} className="btn-ghost">
+          View workflow structure
+        </Link>
       </div>
     </div>
   )

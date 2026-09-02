@@ -1,9 +1,11 @@
 // `page` is clamped by the caller (paginate() below) before being passed
 // in, so it's always valid for the current item count -- this just
-// renders Prev/Next around it. Renders nothing for a single page, so
-// callers can use it unconditionally.
+// renders Prev/Next around it. Always renders, Prev/Next disabled on a
+// single page, so columns with few items (e.g. Dashboard's Scheduled/
+// Ongoing) still show the same pagination bar as one with enough to
+// actually page through, instead of the layout shifting depending on
+// how much data happens to be in each column right now.
 export default function Pagination({ page, totalPages, onChange }) {
-  if (totalPages <= 1) return null
   return (
     <div className="pagination">
       <button className="btn-ghost" disabled={page <= 1} onClick={() => onChange(page - 1)}>

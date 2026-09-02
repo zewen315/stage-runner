@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { depthLevels, graphLayout, stageDepths } from './dagLayout.js'
+import { graphLayout, stageDepths } from './dagLayout.js'
 
 // Shapes mirror GET /workflows/{name}/stages exactly (see StageInfoResponse
 // in workflow_service): { name, depends_on, retries }.
@@ -44,23 +44,6 @@ describe('stageDepths', () => {
   })
 })
 
-describe('depthLevels', () => {
-  it('puts one stage per level for a linear chain', () => {
-    const levels = depthLevels(LINEAR)
-    expect(levels.map((level) => level.map((s) => s.name))).toEqual([
-      ['aggregate_signals'],
-      ['score_items'],
-      ['rank_feed'],
-      ['publish_feed'],
-    ])
-  })
-
-  it('groups parallel branches into the same level, in registration order', () => {
-    const levels = depthLevels(BRANCHING)
-    const branchLevel = levels.find((level) => level.length > 1)
-    expect(branchLevel.map((s) => s.name)).toEqual(['rank_feed', 'trending_topics'])
-  })
-})
 
 describe('graphLayout', () => {
   it('places external dependencies in their own leftmost level', () => {
