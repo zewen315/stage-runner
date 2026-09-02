@@ -3,7 +3,6 @@ import { Link, useParams } from 'react-router-dom'
 import { listRuns, listStages } from '../api.js'
 import RunCard from '../components/RunCard.jsx'
 import WorkflowGraph from '../components/WorkflowGraph.jsx'
-import { depthLevels } from '../dagLayout.js'
 import { useNewRunModal } from '../NewRunModalContext.jsx'
 
 const RUNS_LIMIT = 20
@@ -68,22 +67,19 @@ export default function WorkflowDetail() {
       {view === 'graph' ? (
         <WorkflowGraph stages={stages} />
       ) : (
+        // The graph view already shows dependency structure/branching --
+        // this is deliberately just a flat list, one stage per row, no
+        // depth-grouping.
         <div className="stage-list">
-          {depthLevels(stages).map((level, i) => (
-            <div key={i} className="stage-row">
-              {level.map((stage) => (
-                <div key={stage.name} className="stage-card">
-                  <div className="stage-card-top">
-                    <span className="stage-name">{stage.name}</span>
-                    {stage.retries > 0 && <span className="badge badge-attempts">retries: {stage.retries}</span>}
-                  </div>
-                  <div className="stage-card-meta">
-                    <span>
-                      depends on: {stage.depends_on.length === 0 ? '(nothing)' : stage.depends_on.join(', ')}
-                    </span>
-                  </div>
-                </div>
-              ))}
+          {stages.map((stage) => (
+            <div key={stage.name} className="stage-card">
+              <div className="stage-card-top">
+                <span className="stage-name">{stage.name}</span>
+                {stage.retries > 0 && <span className="badge badge-attempts">retries: {stage.retries}</span>}
+              </div>
+              <div className="stage-card-meta">
+                <span>depends on: {stage.depends_on.length === 0 ? '(nothing)' : stage.depends_on.join(', ')}</span>
+              </div>
             </div>
           ))}
         </div>

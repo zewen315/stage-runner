@@ -76,6 +76,7 @@ export default function Dashboard() {
           <EmptyState text="No runs waiting to start." />
         ) : (
           <>
+            <Pagination page={scheduledView.page} totalPages={scheduledView.totalPages} onChange={setScheduledPage} />
             {scheduledView.items.map((item) =>
               // Recurring schedules always carry next_run_at; one-time
               // schedules never do. cron_expression alone doesn't work as
@@ -88,7 +89,6 @@ export default function Dashboard() {
                 <ScheduleCard key={`once-${item.id}`} schedule={item} />
               ),
             )}
-            <Pagination page={scheduledView.page} totalPages={scheduledView.totalPages} onChange={setScheduledPage} />
           </>
         )}
       </Column>
@@ -98,10 +98,10 @@ export default function Dashboard() {
           <EmptyState text="Nothing running right now." />
         ) : (
           <>
+            <Pagination page={ongoingView.page} totalPages={ongoingView.totalPages} onChange={setOngoingPage} />
             {ongoingView.items.map((run) => (
               <RunCard key={run.id} run={run} />
             ))}
-            <Pagination page={ongoingView.page} totalPages={ongoingView.totalPages} onChange={setOngoingPage} />
           </>
         )}
       </Column>
@@ -111,10 +111,10 @@ export default function Dashboard() {
           <EmptyState text="Nothing has finished yet." />
         ) : (
           <>
+            <Pagination page={finishedView.page} totalPages={finishedView.totalPages} onChange={setFinishedPage} />
             {finishedView.items.map((run) => (
               <RunCard key={run.id} run={run} />
             ))}
-            <Pagination page={finishedView.page} totalPages={finishedView.totalPages} onChange={setFinishedPage} />
           </>
         )}
       </Column>

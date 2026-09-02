@@ -83,6 +83,9 @@ export default function RunDetail() {
         </div>
         <div className="run-header-actions">
           <span className={`status status-lg status-${run.status}`}>{run.status}</span>
+          <Link to={`/workflows/${run.workflow_name}`} className="btn-ghost">
+            View workflow structure
+          </Link>
           {!TERMINAL.has(run.status) && (
             <button className="btn-ghost" onClick={handleStop} disabled={stopping || run.cancel_requested}>
               {run.cancel_requested ? 'Stopping...' : stopping ? 'Stopping...' : 'Stop'}
