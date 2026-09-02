@@ -8,7 +8,10 @@ promotion still stands."
 
 ## Quickstart
 
-Requires Docker and `uv` (for the CLI/tests).
+Requires [Docker](https://docs.docker.com/get-docker/) and [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+(for the CLI). Node.js/npm is only needed if you want to run the web app's own test suite or a
+local dev server outside Docker — see "Tests" below; `docker compose up --build` builds the web
+app itself, no separate npm install required for that path.
 
 ```
 docker compose up --build -d
@@ -17,7 +20,9 @@ docker compose up --build -d
 This starts Postgres, Redis, MinIO, and five services: `resource-store`, `workflow-service`,
 `scheduler`, `runner`, and `gateway` (nginx, serving the web UI and proxying `/resources` and
 `/workflows` to their services). Everything goes through the gateway at `http://localhost:8080`
-— open it in a browser for the web UI.
+— open it in a browser for the web UI. First startup takes a minute or two while images build;
+`docker compose ps` shows when everything's healthy. `docker compose down` stops it (add `-v` to
+also drop the Postgres/MinIO volumes, for a clean-slate restart).
 
 Every workflow here starts from `raw_events`, a resource with no stage of its own — it has to
 be injected before anything can run:
@@ -28,8 +33,10 @@ uv run python stagerunner.py resource upload raw_events ../seed_data/raw_events.
 uv run python stagerunner.py run feed_success --promote
 ```
 
-`run` polls until the run finishes and prints its final status. Watch it happen stage-by-stage
-with `docker compose logs -f scheduler runner`, or in the web UI at `/workflows/feed_success`.
+`uv run` installs the CLI's own dependencies on first use, into its own `cli/.venv` — no
+separate install step needed. `run` polls until the run finishes and prints its final status.
+Watch it happen stage-by-stage with `docker compose logs -f scheduler runner`, or in the web UI
+at `/workflows/feed_success`.
 
 ## Architecture
 
@@ -187,12 +194,14 @@ system_tests/        end-to-end tests against the real, running stack (see "Test
 Three layers, each catching what the one below it structurally can't.
 
 **Unit** — one service's own logic in isolation, against in-memory fakes (see each
-service's `ports.py`/`memory.py`). No Docker, no network, runs in milliseconds:
+service's `ports.py`/`memory.py`). No Docker, no network, runs in milliseconds. `uv run`
+installs each Python service's own dependencies on first use (a separate `.venv` per
+service); the web app needs an explicit `npm install` first (only `uv run` auto-installs):
 
 ```
 cd services/<resource_store|workflow_service|scheduler|runner> && uv run pytest
 cd cli && uv run pytest
-cd services/web && npm test          # pure logic only -- DAG layout, pagination
+cd services/web && npm install && npm test   # pure logic only -- DAG layout, pagination
 ```
 
 **Integration** — the real Postgres-backed repository classes against an actual,
