@@ -29,6 +29,7 @@ class InMemoryScheduleStore:
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
         run_at: str | None = None,
+        on_failure: str | None = None,
     ) -> int:
         schedule_id = self._next_schedule_id
         self._schedules[schedule_id] = {
@@ -38,6 +39,7 @@ class InMemoryScheduleStore:
             "input_versions": input_versions,
             "promote": promote,
             "run_at": run_at,
+            "on_failure": on_failure,
             "dispatched": False,
         }
         self._next_schedule_id += 1
@@ -53,6 +55,7 @@ class InMemoryScheduleStore:
         promote: bool | None = None,
         next_run_at: str | None = None,
         enabled: bool = True,
+        on_failure: str | None = None,
     ) -> int:
         recurring_schedule_id = self._next_recurring_schedule_id
         self._recurring_schedules[recurring_schedule_id] = {
@@ -64,6 +67,7 @@ class InMemoryScheduleStore:
             "promote": promote,
             "next_run_at": next_run_at or datetime.now(timezone.utc).isoformat(),
             "enabled": enabled,
+            "on_failure": on_failure,
         }
         self._next_recurring_schedule_id += 1
         return recurring_schedule_id
@@ -77,6 +81,7 @@ class InMemoryScheduleStore:
         promote: bool = True,
         status: str = "requested",
         cancel_requested: bool = False,
+        on_failure: str | None = None,
     ) -> int:
         run_id = self._next_run_id
         self._runs[run_id] = {
@@ -88,6 +93,7 @@ class InMemoryScheduleStore:
             "status": status,
             "error": None,
             "cancel_requested": cancel_requested,
+            "on_failure": on_failure,
         }
         self._next_run_id += 1
         return run_id
@@ -113,6 +119,7 @@ class InMemoryScheduleStore:
             "status": status,
             "output_version": output_version,
             "error": error,
+            "used_fallback": False,
         }
         self._next_stage_run_id += 1
         return stage_run_id
@@ -138,6 +145,7 @@ class InMemoryScheduleStore:
                 stop_after=s["stop_after"],
                 input_versions=s["input_versions"],
                 promote=s["promote"],
+                on_failure=s["on_failure"],
             )
             for sid, s in self._schedules.items()
             if not s["dispatched"] and (s["run_at"] is None or s["run_at"] <= now)
@@ -158,6 +166,7 @@ class InMemoryScheduleStore:
                 stop_after=r["stop_after"],
                 input_versions=r["input_versions"],
                 promote=r["promote"],
+                on_failure=r["on_failure"],
             )
             for rid, r in self._recurring_schedules.items()
             if r["enabled"] and r["next_run_at"] <= now
@@ -173,9 +182,10 @@ class InMemoryScheduleStore:
         stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool,
+        on_failure: str | None = None,
     ) -> int:
         return self.add_workflow_run(
-            workflow_name, start_from, stop_after, input_versions, promote
+            workflow_name, start_from, stop_after, input_versions, promote, on_failure=on_failure
         )
 
     def create_stage_run(
@@ -199,6 +209,7 @@ class InMemoryScheduleStore:
                 promote=r["promote"],
                 status=r["status"],
                 cancel_requested=r["cancel_requested"],
+                on_failure=r["on_failure"],
             )
             for rid, r in self._runs.items()
             if r["status"] in ("requested", "running")
@@ -207,14 +218,19 @@ class InMemoryScheduleStore:
     def stage_runs_for_workflow_run(self, run_id: int) -> list[StageRunRecord]:
         return [
             StageRunRecord(
+                id=sid,
                 stage_name=sr["stage_name"],
                 status=sr["status"],
                 output_version=sr["output_version"],
                 error=sr["error"],
+                used_fallback=sr["used_fallback"],
             )
-            for sr in self._stage_runs.values()
+            for sid, sr in self._stage_runs.items()
             if sr["workflow_run_id"] == run_id
         ]
+
+    def mark_stage_run_used_fallback(self, stage_run_id: int) -> None:
+        self._stage_runs[stage_run_id]["used_fallback"] = True
 
     def mark_workflow_run_running(self, run_id: int) -> None:
         self._runs[run_id]["status"] = "running"

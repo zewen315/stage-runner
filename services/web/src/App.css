@@ -364,6 +364,30 @@ a.run-card:hover {
   color: var(--cancelled);
 }
 
+.stage-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.badge {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.badge-fallback {
+  background: var(--running-bg);
+  color: var(--running);
+}
+
+.badge-attempts {
+  background: var(--skipped-bg);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 /* -- run detail ------------------------------------------------------- */
 
 .run-header {

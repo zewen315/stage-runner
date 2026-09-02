@@ -51,7 +51,9 @@ def test_feed_success_produces_expected_order(mock_sleep, tmp_path):
 
     for stage_def in topological_order(registry.all()):
         input_versions = {dep: done[dep] for dep in stage_def.depends_on}
-        done[stage_def.name] = runner.run_stage(stage_def, input_versions, promote=True)
+        outcome = runner.run_stage(stage_def, input_versions, promote=True)
+        assert outcome.error is None, f"{stage_def.name} failed: {outcome.error}"
+        done[stage_def.name] = outcome.version
 
     _, feed = resources.get("rank_feed")
     assert [item["item_id"] for item in feed] == ["post_3", "post_1", "post_2"]

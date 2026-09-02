@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at        TIMESTAMPTZ,
     finished_at       TIMESTAMPTZ,
     error             TEXT,
-    cancel_requested  BOOLEAN NOT NULL DEFAULT false
+    cancel_requested  BOOLEAN NOT NULL DEFAULT false,
+    on_failure        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS stage_runs (
@@ -45,7 +46,9 @@ CREATE TABLE IF NOT EXISTS stage_runs (
     requested_at    TIMESTAMPTZ NOT NULL,
     started_at      TIMESTAMPTZ,
     finished_at     TIMESTAMPTZ,
-    error           TEXT
+    error           TEXT,
+    attempts        INTEGER NOT NULL DEFAULT 1,
+    used_fallback   BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS schedules (
@@ -58,7 +61,8 @@ CREATE TABLE IF NOT EXISTS schedules (
     requested_at   TIMESTAMPTZ NOT NULL,
     run_at         TIMESTAMPTZ,
     dispatched_at  TIMESTAMPTZ,
-    run_id         BIGINT REFERENCES runs(id)
+    run_id         BIGINT REFERENCES runs(id),
+    on_failure     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS recurring_schedules (
@@ -71,7 +75,8 @@ CREATE TABLE IF NOT EXISTS recurring_schedules (
     promote         BOOLEAN,
     enabled         BOOLEAN NOT NULL DEFAULT true,
     next_run_at     TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL
+    created_at      TIMESTAMPTZ NOT NULL,
+    on_failure      TEXT
 );
 """
 
@@ -88,7 +93,7 @@ class PostgresScheduleStore:
     def pending_schedules(self) -> list[PendingSchedule]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT id, workflow_name, start_from, stop_after, input_versions, promote "
+                "SELECT id, workflow_name, start_from, stop_after, input_versions, promote, on_failure "
                 "FROM schedules WHERE dispatched_at IS NULL AND (run_at IS NULL OR run_at <= now())"
             )
             return [
@@ -99,6 +104,7 @@ class PostgresScheduleStore:
                     stop_after=row[3],
                     input_versions=row[4],
                     promote=row[5],
+                    on_failure=row[6],
                 )
                 for row in cur.fetchall()
             ]
@@ -113,8 +119,8 @@ class PostgresScheduleStore:
     def due_recurring_schedules(self) -> list[DueRecurringSchedule]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT id, workflow_name, cron_expression, start_from, stop_after, input_versions, promote "
-                "FROM recurring_schedules WHERE enabled AND next_run_at <= now()"
+                "SELECT id, workflow_name, cron_expression, start_from, stop_after, input_versions, "
+                "promote, on_failure FROM recurring_schedules WHERE enabled AND next_run_at <= now()"
             )
             return [
                 DueRecurringSchedule(
@@ -125,6 +131,7 @@ class PostgresScheduleStore:
                     stop_after=row[4],
                     input_versions=row[5],
                     promote=row[6],
+                    on_failure=row[7],
                 )
                 for row in cur.fetchall()
             ]
@@ -143,12 +150,15 @@ class PostgresScheduleStore:
         stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool,
+        on_failure: str | None = None,
     ) -> int:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO runs (workflow_name, start_from, stop_after, input_versions, promote, status, requested_at)
-                VALUES (%s, %s, %s, %s, %s, 'requested', now())
+                INSERT INTO runs
+                    (workflow_name, start_from, stop_after, input_versions, promote, status,
+                     requested_at, on_failure)
+                VALUES (%s, %s, %s, %s, %s, 'requested', now(), %s)
                 RETURNING id
                 """,
                 (
@@ -157,6 +167,7 @@ class PostgresScheduleStore:
                     stop_after,
                     Jsonb(input_versions) if input_versions is not None else None,
                     promote,
+                    on_failure,
                 ),
             )
             return cur.fetchone()[0]
@@ -185,7 +196,7 @@ class PostgresScheduleStore:
         with self._conn.cursor() as cur:
             cur.execute(
                 "SELECT id, workflow_name, start_from, stop_after, input_versions, promote, status, "
-                "cancel_requested FROM runs WHERE status IN ('requested', 'running')"
+                "cancel_requested, on_failure FROM runs WHERE status IN ('requested', 'running')"
             )
             return [
                 ActiveWorkflowRun(
@@ -197,6 +208,7 @@ class PostgresScheduleStore:
                     promote=row[5],
                     status=row[6],
                     cancel_requested=row[7],
+                    on_failure=row[8],
                 )
                 for row in cur.fetchall()
             ]
@@ -204,13 +216,25 @@ class PostgresScheduleStore:
     def stage_runs_for_workflow_run(self, run_id: int) -> list[StageRunRecord]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT stage_name, status, output_version, error FROM stage_runs WHERE workflow_run_id = %s",
+                "SELECT id, stage_name, status, output_version, error, used_fallback "
+                "FROM stage_runs WHERE workflow_run_id = %s",
                 (run_id,),
             )
             return [
-                StageRunRecord(stage_name=row[0], status=row[1], output_version=row[2], error=row[3])
+                StageRunRecord(
+                    id=row[0],
+                    stage_name=row[1],
+                    status=row[2],
+                    output_version=row[3],
+                    error=row[4],
+                    used_fallback=row[5],
+                )
                 for row in cur.fetchall()
             ]
+
+    def mark_stage_run_used_fallback(self, stage_run_id: int) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute("UPDATE stage_runs SET used_fallback = true WHERE id = %s", (stage_run_id,))
 
     def mark_workflow_run_running(self, run_id: int) -> None:
         with self._conn.cursor() as cur:

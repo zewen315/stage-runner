@@ -11,6 +11,7 @@ class PendingSchedule:
     stop_after: str | None
     input_versions: dict[str, int] | None
     promote: bool | None
+    on_failure: str | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class DueRecurringSchedule:
     stop_after: str | None
     input_versions: dict[str, int] | None
     promote: bool | None
+    on_failure: str | None = None
 
 
 @dataclass(frozen=True)
@@ -39,11 +41,16 @@ class ActiveWorkflowRun:
     promote: bool
     status: str
     cancel_requested: bool = False
+    on_failure: str | None = None
+    """None means use the workflow's own code-declared StageRegistry
+    default; set overrides it for this run only."""
 
 
 @dataclass(frozen=True)
 class StageRunRecord:
+    id: int
     stage_name: str
     status: str
     output_version: int | None
     error: str | None
+    used_fallback: bool = False

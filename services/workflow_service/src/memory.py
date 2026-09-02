@@ -20,6 +20,7 @@ class InMemoryRecurringScheduleRepository:
         promote: bool | None,
         next_run_at: str,
         created_at: str,
+        on_failure: str | None = None,
     ) -> RecurringSchedule:
         recurring = RecurringSchedule(
             id=self._next_id,
@@ -32,6 +33,7 @@ class InMemoryRecurringScheduleRepository:
             enabled=True,
             next_run_at=next_run_at,
             created_at=created_at,
+            on_failure=on_failure,
         )
         self._recurring_schedules[recurring.id] = recurring
         self._next_id += 1
@@ -67,6 +69,7 @@ class InMemoryScheduleRepository:
         promote: bool | None,
         requested_at: str,
         run_at: str | None = None,
+        on_failure: str | None = None,
     ) -> Schedule:
         schedule = Schedule(
             id=self._next_id,
@@ -79,6 +82,7 @@ class InMemoryScheduleRepository:
             run_at=run_at,
             dispatched_at=None,
             run_id=None,
+            on_failure=on_failure,
         )
         self._schedules[schedule.id] = schedule
         self._next_id += 1
@@ -154,15 +158,22 @@ class InMemoryStageRunRepository:
             self._stage_runs[stage_run_id], status=RunStatus.RUNNING, started_at=started_at
         )
 
-    def mark_completed(self, stage_run_id: int, finished_at: str, output_version: int | None) -> None:
+    def mark_completed(
+        self, stage_run_id: int, finished_at: str, output_version: int | None, attempts: int = 1
+    ) -> None:
         self._stage_runs[stage_run_id] = replace(
             self._stage_runs[stage_run_id],
             status=RunStatus.COMPLETED,
             finished_at=finished_at,
             output_version=output_version,
+            attempts=attempts,
         )
 
-    def mark_failed(self, stage_run_id: int, finished_at: str, error: str) -> None:
+    def mark_failed(self, stage_run_id: int, finished_at: str, error: str, attempts: int = 1) -> None:
         self._stage_runs[stage_run_id] = replace(
-            self._stage_runs[stage_run_id], status=RunStatus.FAILED, finished_at=finished_at, error=error
+            self._stage_runs[stage_run_id],
+            status=RunStatus.FAILED,
+            finished_at=finished_at,
+            error=error,
+            attempts=attempts,
         )

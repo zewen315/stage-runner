@@ -32,6 +32,7 @@ class ScheduleStore(Protocol):
         stop_after: str | None,
         input_versions: dict[str, int] | None,
         promote: bool,
+        on_failure: str | None = None,
     ) -> int: ...
 
     def create_stage_run(
@@ -54,6 +55,15 @@ class ScheduleStore(Protocol):
     def mark_workflow_run_failed(self, run_id: int, error: str) -> None: ...
 
     def mark_workflow_run_cancelled(self, run_id: int) -> None: ...
+
+    def mark_stage_run_used_fallback(self, stage_run_id: int) -> None:
+        """Set directly here (not through workflow_service) when a failed
+        stage's failure was papered over by on_failure="fallback" -- a
+        second, narrowly-scoped writer of `stage_runs`, alongside the
+        worker's own status/attempts updates, the same way workflow_service
+        writes `cancel_requested` on `runs` while this poller alone still
+        writes `status`."""
+        ...
 
 
 class RunQueue(Protocol):

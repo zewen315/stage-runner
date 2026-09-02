@@ -56,12 +56,21 @@ def process_message(
         registry = load_workflow(workflow_dir)
         stage_def = registry.get(stage_name)
         runner = Runner(resources, workflow_dir=workflow_dir, executor=executor)
-        output_version = runner.run_stage(stage_def, input_versions, promote, is_test=is_test)
+        outcome = runner.run_stage(stage_def, input_versions, promote, is_test=is_test)
     except Exception as exc:  # noqa: BLE001 -- report and move on, don't crash the worker
-        report(workflow_name, stage_run_id, "fail", {"error": str(exc)})
+        report(workflow_name, stage_run_id, "fail", {"error": str(exc), "attempts": 1})
         return
 
-    report(workflow_name, stage_run_id, "complete", {"output_version": output_version})
+    if outcome.error is not None:
+        report(workflow_name, stage_run_id, "fail", {"error": outcome.error, "attempts": outcome.attempts})
+        return
+
+    report(
+        workflow_name,
+        stage_run_id,
+        "complete",
+        {"output_version": outcome.version, "attempts": outcome.attempts},
+    )
 
 
 def _http_report(workflow_service_url: str) -> Report:

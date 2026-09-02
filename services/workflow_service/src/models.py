@@ -30,6 +30,9 @@ class WorkflowRun:
     changes `status`) on its next tick -- so this can briefly be true
     while status is still "running", the window between asking to stop
     and the Scheduler actually marking it cancelled."""
+    on_failure: str | None = None
+    """None means use the workflow's own code-declared StageRegistry
+    default; "halt" or "fallback" overrides it for this run only."""
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,15 @@ class StageRun:
     started_at: str | None
     finished_at: str | None
     error: str | None
+    attempts: int = 1
+    """How many times the Runner actually called the stage function --
+    more than 1 only when the stage declares `retries` and an earlier
+    attempt failed."""
+    used_fallback: bool = False
+    """True when this stage itself failed but on_failure="fallback"
+    let the run continue by treating it as if it had produced its
+    currently-promoted version instead -- so downstream stages (and
+    this run) may be building on a stale value, not a fresh one."""
 
 
 @dataclass(frozen=True)
@@ -63,6 +75,9 @@ class Schedule:
     before then."""
     dispatched_at: str | None
     run_id: int | None
+    on_failure: str | None = None
+    """None means use the workflow's own code-declared default; "halt" or
+    "fallback" overrides it for the run this schedule dispatches to."""
 
 
 @dataclass(frozen=True)
@@ -83,16 +98,18 @@ class RecurringSchedule:
     enabled: bool
     next_run_at: str
     created_at: str
+    on_failure: str | None = None
 
 
 @dataclass(frozen=True)
 class StageInfo:
-    """A stage's name and its direct dependencies, as declared in the
-    workflow's own registry -- not persisted anywhere, just a read
-    through to the workflow's code."""
+    """A stage's name, its direct dependencies, and its declared retry
+    count -- as declared in the workflow's own registry, not persisted
+    anywhere, just a read through to the workflow's code."""
 
     name: str
     depends_on: list[str]
+    retries: int
 
 
 @dataclass(frozen=True)

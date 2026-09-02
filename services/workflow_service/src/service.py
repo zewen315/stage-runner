@@ -21,6 +21,7 @@ from workflow_loader import load_workflow
 
 from errors import (
     InvalidCronExpressionError,
+    InvalidOnFailureError,
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
@@ -31,9 +32,16 @@ from errors import (
 from models import RecurringSchedule, RunStatus, Schedule, ScheduleStatus, StageInfo, StageRun, WorkflowRun
 from ports import RecurringScheduleRepository, ScheduleRepository, StageRunRepository, WorkflowRunRepository
 
+_VALID_ON_FAILURE = {"halt", "fallback"}
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _validate_on_failure(on_failure: str | None) -> None:
+    if on_failure is not None and on_failure not in _VALID_ON_FAILURE:
+        raise InvalidOnFailureError(f"on_failure must be one of {sorted(_VALID_ON_FAILURE)}, got {on_failure!r}")
 
 
 class WorkflowService:
@@ -89,6 +97,7 @@ class WorkflowService:
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
         run_at: str | None = None,
+        on_failure: str | None = None,
     ) -> Schedule:
         """Client-facing: trigger a run, once. `start_from`/`stop_after`
         (both optional) narrow it to a sub-range of the workflow's DAG --
@@ -101,14 +110,19 @@ class WorkflowService:
         means eligible for dispatch as soon as the Scheduler sees it
         (today's only behavior); set it to delay dispatch until then --
         the Scheduler is the one that actually enforces this, on its own
-        pending_schedules() query, not anything here. Stage-name existence
-        isn't validated here -- an unknown name fails at dispatch time
-        instead, same as always; see `list_stages` below for the one place
-        this service does load a workflow's registry, for a different
-        reason (offering real names to pick from, not validating one).
-        Record intent, return immediately -- the Scheduler picks up
-        undispatched schedules on its own poll cycle."""
+        pending_schedules() query, not anything here. `on_failure` left
+        unset means the workflow's own code-declared StageRegistry default
+        applies; "halt" or "fallback" overrides it for this run only --
+        the Scheduler is what actually reads this when a stage fails, not
+        anything here. Stage-name existence isn't validated here -- an
+        unknown name fails at dispatch time instead, same as always; see
+        `list_stages` below for the one place this service does load a
+        workflow's registry, for a different reason (offering real names
+        to pick from, not validating one). Record intent, return
+        immediately -- the Scheduler picks up undispatched schedules on
+        its own poll cycle."""
         self._require_workflow(workflow_name)
+        _validate_on_failure(on_failure)
         return self._schedules.create(
             workflow_name,
             start_from,
@@ -117,6 +131,7 @@ class WorkflowService:
             promote,
             requested_at=_utcnow(),
             run_at=run_at,
+            on_failure=on_failure,
         )
 
     def get_schedule_status(self, workflow_name: str, schedule_id: int) -> ScheduleStatus:
@@ -176,6 +191,7 @@ class WorkflowService:
         stop_after: str | None = None,
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
+        on_failure: str | None = None,
     ) -> RecurringSchedule:
         """Client-facing: register a standing rule. Computes the first
         next_run_at from `cron_expression` relative to now -- the
@@ -183,6 +199,7 @@ class WorkflowService:
         next_run_at after that, on its own poll cycle, the same way it
         alone dispatches `schedules`."""
         self._require_workflow(workflow_name)
+        _validate_on_failure(on_failure)
         try:
             next_run_at = croniter(cron_expression, datetime.now(timezone.utc)).get_next(datetime).isoformat()
         except CroniterBadCronError as exc:
@@ -196,6 +213,7 @@ class WorkflowService:
             promote,
             next_run_at=next_run_at,
             created_at=_utcnow(),
+            on_failure=on_failure,
         )
 
     def list_recurring_schedules(self, workflow_name: str) -> list[RecurringSchedule]:
@@ -219,7 +237,7 @@ class WorkflowService:
         self._require_workflow(workflow_name)
         registry = load_workflow(self._workflows_root / workflow_name)
         return [
-            StageInfo(name=stage.name, depends_on=list(stage.depends_on))
+            StageInfo(name=stage.name, depends_on=list(stage.depends_on), retries=stage.retries)
             for stage in topological_order(registry.all())
         ]
 
@@ -262,12 +280,16 @@ class WorkflowService:
         self._require_stage_run(workflow_name, stage_run_id)
         self._stage_runs.mark_running(stage_run_id, started_at=_utcnow())
 
-    def complete_stage_run(self, workflow_name: str, stage_run_id: int, output_version: int | None) -> None:
+    def complete_stage_run(
+        self, workflow_name: str, stage_run_id: int, output_version: int | None, attempts: int = 1
+    ) -> None:
         """Worker-facing."""
         self._require_stage_run(workflow_name, stage_run_id)
-        self._stage_runs.mark_completed(stage_run_id, finished_at=_utcnow(), output_version=output_version)
+        self._stage_runs.mark_completed(
+            stage_run_id, finished_at=_utcnow(), output_version=output_version, attempts=attempts
+        )
 
-    def fail_stage_run(self, workflow_name: str, stage_run_id: int, error: str) -> None:
+    def fail_stage_run(self, workflow_name: str, stage_run_id: int, error: str, attempts: int = 1) -> None:
         """Worker-facing."""
         self._require_stage_run(workflow_name, stage_run_id)
-        self._stage_runs.mark_failed(stage_run_id, finished_at=_utcnow(), error=error)
+        self._stage_runs.mark_failed(stage_run_id, finished_at=_utcnow(), error=error, attempts=attempts)

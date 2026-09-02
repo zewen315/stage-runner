@@ -4,6 +4,7 @@ import pytest
 
 from errors import (
     InvalidCronExpressionError,
+    InvalidOnFailureError,
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
@@ -135,6 +136,18 @@ class TestRequestRun:
         schedule = service.request_run("feed_ranking", run_at="2099-01-01T00:00:00+00:00")
         assert schedule.run_at == "2099-01-01T00:00:00+00:00"
 
+    def test_on_failure_left_unset_is_none(self, service):
+        schedule = service.request_run("feed_ranking")
+        assert schedule.on_failure is None
+
+    def test_on_failure_is_recorded_when_given(self, service):
+        schedule = service.request_run("feed_ranking", on_failure="fallback")
+        assert schedule.on_failure == "fallback"
+
+    def test_invalid_on_failure_raises(self, service):
+        with pytest.raises(InvalidOnFailureError):
+            service.request_run("feed_ranking", on_failure="retry")
+
     def test_single_stage_run_sets_start_from_and_stop_after_to_the_same_name(self, service):
         schedule = service.request_run(
             "feed_ranking",
@@ -255,6 +268,14 @@ class TestRecurringSchedules:
         assert recurring.start_from == "score_items"
         assert recurring.promote is True
 
+    def test_on_failure_is_recorded_when_given(self, service):
+        recurring = service.create_recurring_schedule("feed_ranking", "* * * * *", on_failure="fallback")
+        assert recurring.on_failure == "fallback"
+
+    def test_invalid_on_failure_raises(self, service):
+        with pytest.raises(InvalidOnFailureError):
+            service.create_recurring_schedule("feed_ranking", "* * * * *", on_failure="retry")
+
     def test_invalid_cron_expression_raises(self, service):
         with pytest.raises(InvalidCronExpressionError):
             service.create_recurring_schedule("feed_ranking", "not a cron")
@@ -354,6 +375,23 @@ class TestStageRunLifecycle:
         updated = service.get_stage_run("feed_ranking", stage_run.id)
         assert updated.status == RunStatus.COMPLETED
         assert updated.output_version == 5
+        assert updated.attempts == 1
+
+    def test_complete_records_attempts_when_given(self, service, stage_runs):
+        stage_run = _seed_stage_run(stage_runs)
+        service.start_stage_run("feed_ranking", stage_run.id)
+
+        service.complete_stage_run("feed_ranking", stage_run.id, output_version=5, attempts=3)
+
+        assert service.get_stage_run("feed_ranking", stage_run.id).attempts == 3
+
+    def test_fail_records_attempts_when_given(self, service, stage_runs):
+        stage_run = _seed_stage_run(stage_runs)
+        service.start_stage_run("feed_ranking", stage_run.id)
+
+        service.fail_stage_run("feed_ranking", stage_run.id, "boom", attempts=3)
+
+        assert service.get_stage_run("feed_ranking", stage_run.id).attempts == 3
 
     def test_fail_marks_failed_with_error(self, service, stage_runs):
         stage_run = _seed_stage_run(stage_runs)
@@ -393,6 +431,13 @@ class TestListStages:
             ("raw", []),
             ("doubled", ["raw"]),
         ]
+
+    def test_surfaces_each_stage_s_declared_retries(self, service, workflows_root):
+        _write_stage_workflow(workflows_root, "stage_list_retries")
+
+        stages = service.list_stages("stage_list_retries")
+
+        assert all(s.retries == 0 for s in stages)  # neither stage declares retries
 
     def test_unknown_workflow_raises(self, service):
         with pytest.raises(WorkflowNotFoundError):

@@ -128,6 +128,11 @@ def test_request_run_with_run_at_returns_202(client):
     assert response.json()["run_at"] == "2099-01-01T00:00:00+00:00"
 
 
+def test_request_run_with_invalid_on_failure_is_400(client):
+    response = client.post("/workflows/feed_ranking/runs", json={"on_failure": "retry"})
+    assert response.status_code == 400
+
+
 def test_get_schedule_status_proxies_dispatched_run(client, schedules, workflow_runs):
     schedule = client.post("/workflows/feed_ranking/runs").json()
     workflow_runs.add(_workflow_run(id=42, status=RunStatus.RUNNING))
@@ -267,7 +272,7 @@ def raw():
     response = client.get("/workflows/api_stage_list/stages")
 
     assert response.status_code == 200
-    assert response.json() == [{"name": "raw", "depends_on": []}]
+    assert response.json() == [{"name": "raw", "depends_on": [], "retries": 0}]
 
 
 def test_list_stages_unknown_workflow_is_404(client):
@@ -316,6 +321,15 @@ def test_full_stage_run_lifecycle_via_worker_endpoints(client, stage_runs):
     updated = client.get("/workflows/feed_ranking/stage-runs/1").json()
     assert updated["status"] == "completed"
     assert updated["output_version"] == 3
+    assert updated["attempts"] == 1
+
+
+def test_complete_stage_run_records_attempts(client, stage_runs):
+    stage_runs.add(_stage_run(id=1, status=RunStatus.RUNNING))
+
+    client.post("/workflows/feed_ranking/stage-runs/1/complete", json={"output_version": 3, "attempts": 3})
+
+    assert client.get("/workflows/feed_ranking/stage-runs/1").json()["attempts"] == 3
 
 
 def test_fail_stage_run_records_error(client, stage_runs):
@@ -327,6 +341,7 @@ def test_fail_stage_run_records_error(client, stage_runs):
     updated = client.get("/workflows/feed_ranking/stage-runs/1").json()
     assert updated["status"] == "failed"
     assert updated["error"] == "boom"
+    assert updated["attempts"] == 1
 
 
 def test_get_stage_run_unknown_is_404(client):

@@ -22,6 +22,11 @@ class StageDef:
     name: str
     fn: Callable[..., Any]
     depends_on: list[str] = field(default_factory=list)
+    retries: int = 0
+    """Extra attempts after the first if the stage raises or its output
+    fails validation -- 0 (default) means try once, no retry. The Runner
+    re-executes the whole stage function each attempt (not just the
+    upload), since a transient failure is exactly what this is for."""
 
 
 FailurePolicy = Literal["halt", "fallback"]
@@ -43,9 +48,9 @@ class StageRegistry:
         self._stages: dict[str, StageDef] = {}
         self.on_failure = on_failure
 
-    def stage(self, name: str, depends_on: list[str] = ()):
+    def stage(self, name: str, depends_on: list[str] = (), retries: int = 0):
         def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-            self._stages[name] = StageDef(name=name, fn=fn, depends_on=list(depends_on))
+            self._stages[name] = StageDef(name=name, fn=fn, depends_on=list(depends_on), retries=retries)
             return fn
 
         return decorator

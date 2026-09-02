@@ -452,6 +452,57 @@ class TestFallback:
         assert queue.enqueued[0]["input_versions"] == {"doubled": version}
         assert store.active_workflow_runs()[0].status == "running"
 
+    def test_falls_back_marks_the_failed_stage_run_used_fallback(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()
+        version = resources.upload_version("doubled", 99)
+        resources.promote("doubled", version)
+
+        run_id = store.add_workflow_run("feed_ranking", status="running")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        failed_id = store.add_stage_run(run_id, "doubled", status="failed", error="boom")
+
+        poll_once(store, queue, _registry_provider(_fallback_registry()), resources)
+
+        [failed_record] = [
+            sr for sr in store.stage_runs_for_workflow_run(run_id) if sr.id == failed_id
+        ]
+        assert failed_record.used_fallback is True
+
+    def test_run_level_override_enables_fallback_on_a_halt_workflow(self):
+        """A run's own on_failure -- set by whoever triggered it -- takes
+        precedence over the workflow's code-declared default."""
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()
+        version = resources.upload_version("doubled", 99)
+        resources.promote("doubled", version)
+
+        run_id = store.add_workflow_run("feed_ranking", status="running", on_failure="fallback")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        store.add_stage_run(run_id, "doubled", status="failed", error="boom")
+
+        poll_once(store, queue, _registry_provider(_linear_registry()), resources)  # halt by default
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["tripled"]
+
+    def test_run_level_override_forces_halt_on_a_fallback_workflow(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        resources = InMemoryResourceClient()
+        version = resources.upload_version("doubled", 99)
+        resources.promote("doubled", version)
+
+        run_id = store.add_workflow_run("feed_ranking", status="running", on_failure="halt")
+        store.add_stage_run(run_id, "raw", status="completed", output_version=1)
+        store.add_stage_run(run_id, "doubled", status="failed", error="boom")
+
+        poll_once(store, queue, _registry_provider(_fallback_registry()), resources)  # fallback by default
+
+        assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
     def test_degrades_to_halt_when_no_fallback_version_exists(self):
         store = InMemoryScheduleStore()
         queue = InMemoryRunQueue()

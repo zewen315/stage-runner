@@ -69,7 +69,7 @@ def test_successful_stage_reports_start_then_complete_with_output_version(tmp_pa
 
     assert report.calls == [
         ("simple_ok", 1, "start", {}),
-        ("simple_ok", 1, "complete", {"output_version": 1}),
+        ("simple_ok", 1, "complete", {"output_version": 1, "attempts": 1}),
     ]
     assert resources.get("raw") == (1, {"n": 1})
 
@@ -105,7 +105,7 @@ def test_pinned_input_version_is_resolved_instead_of_current(tmp_path):
         report=report,
     )
 
-    assert report.calls[-1] == ("simple_pinned", 1, "complete", {"output_version": 1})
+    assert report.calls[-1] == ("simple_pinned", 1, "complete", {"output_version": 1, "attempts": 1})
     assert resources.get("doubled") == (1, {"n": 200})
 
 
@@ -174,6 +174,40 @@ def test_failing_stage_reports_start_then_fail_with_error(tmp_path):
     assert report.calls[0] == ("simple_boom", 2, "start", {})
     assert report.calls[1][:3] == ("simple_boom", 2, "fail")
     assert "boom" in report.calls[1][3]["error"]
+    assert report.calls[1][3]["attempts"] == 1
+
+
+def test_retries_are_reflected_in_the_reported_attempts(tmp_path):
+    workflow_dir = tmp_path / "simple_retry"
+    workflow_dir.mkdir()
+    (workflow_dir / "__init__.py").write_text(
+        """
+from stages import StageRegistry
+
+registry = StageRegistry()
+
+_calls = []
+
+
+@registry.stage("flaky", depends_on=[], retries=2)
+def flaky():
+    _calls.append(1)
+    if len(_calls) < 2:
+        raise ValueError("boom")
+    return {"n": 1}
+"""
+    )
+    resources = InMemoryResourceClient()
+    report = RecordingReport()
+
+    process_message(
+        _message(1, "simple_retry", "flaky"),
+        workflows_root=tmp_path,
+        resources=resources,
+        report=report,
+    )
+
+    assert report.calls[-1] == ("simple_retry", 1, "complete", {"output_version": 1, "attempts": 2})
 
 
 def test_missing_workflow_reports_fail_without_raising(tmp_path):

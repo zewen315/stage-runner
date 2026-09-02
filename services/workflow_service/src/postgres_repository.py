@@ -34,7 +34,11 @@ CREATE TABLE IF NOT EXISTS runs (
     error             TEXT,
     -- Set by workflow_service's request_cancel(); the Scheduler is still
     -- the only thing that ever changes `status`, on its next tick.
-    cancel_requested  BOOLEAN NOT NULL DEFAULT false
+    cancel_requested  BOOLEAN NOT NULL DEFAULT false,
+    -- NULL means use the workflow's own code-declared StageRegistry
+    -- default; set overrides it for this run only. Copied from the
+    -- schedule/recurring_schedule that spawned this run at intake time.
+    on_failure        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS stage_runs (
@@ -49,7 +53,14 @@ CREATE TABLE IF NOT EXISTS stage_runs (
     requested_at    TIMESTAMPTZ NOT NULL,
     started_at      TIMESTAMPTZ,
     finished_at     TIMESTAMPTZ,
-    error           TEXT
+    error           TEXT,
+    -- Set by the worker's complete/fail callback; >1 only when the stage
+    -- declares retries and an earlier attempt failed.
+    attempts        INTEGER NOT NULL DEFAULT 1,
+    -- Set directly by the Scheduler (not through this service) when this
+    -- stage failed but on_failure="fallback" let the run continue anyway,
+    -- treating it as if it had produced its currently-promoted version.
+    used_fallback   BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS schedules (
@@ -65,7 +76,10 @@ CREATE TABLE IF NOT EXISTS schedules (
     -- pending_schedules() query).
     run_at         TIMESTAMPTZ,
     dispatched_at  TIMESTAMPTZ,
-    run_id         BIGINT REFERENCES runs(id)
+    run_id         BIGINT REFERENCES runs(id),
+    -- NULL means use the workflow's own code-declared default; copied
+    -- onto the WorkflowRun this schedule dispatches to.
+    on_failure     TEXT
 );
 
 -- A standing rule the Scheduler fires on a cadence -- distinct from
@@ -82,7 +96,8 @@ CREATE TABLE IF NOT EXISTS recurring_schedules (
     promote         BOOLEAN,
     enabled         BOOLEAN NOT NULL DEFAULT true,
     next_run_at     TIMESTAMPTZ NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL
+    created_at      TIMESTAMPTZ NOT NULL,
+    on_failure      TEXT
 );
 """
 
@@ -90,7 +105,7 @@ CREATE TABLE IF NOT EXISTS recurring_schedules (
 class PostgresScheduleRepository:
     _COLUMNS = (
         "id, workflow_name, start_from, stop_after, input_versions, promote, "
-        "requested_at, run_at, dispatched_at, run_id"
+        "requested_at, run_at, dispatched_at, run_id, on_failure"
     )
 
     def __init__(self, dsn: str):
@@ -114,6 +129,7 @@ class PostgresScheduleRepository:
             run_at=row[7].isoformat() if row[7] else None,
             dispatched_at=row[8].isoformat() if row[8] else None,
             run_id=row[9],
+            on_failure=row[10],
         )
 
     def create(
@@ -125,13 +141,15 @@ class PostgresScheduleRepository:
         promote: bool | None,
         requested_at: str,
         run_at: str | None = None,
+        on_failure: str | None = None,
     ) -> Schedule:
         with self._conn.cursor() as cur:
             cur.execute(
                 f"""
                 INSERT INTO schedules
-                    (workflow_name, start_from, stop_after, input_versions, promote, requested_at, run_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (workflow_name, start_from, stop_after, input_versions, promote, requested_at,
+                     run_at, on_failure)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {self._COLUMNS}
                 """,
                 (
@@ -142,6 +160,7 @@ class PostgresScheduleRepository:
                     promote,
                     requested_at,
                     run_at,
+                    on_failure,
                 ),
             )
             return self._schedule_from_row(cur.fetchone())
@@ -170,7 +189,7 @@ class PostgresScheduleRepository:
 class PostgresRecurringScheduleRepository:
     _COLUMNS = (
         "id, workflow_name, cron_expression, start_from, stop_after, input_versions, promote, "
-        "enabled, next_run_at, created_at"
+        "enabled, next_run_at, created_at, on_failure"
     )
 
     def __init__(self, dsn: str):
@@ -194,6 +213,7 @@ class PostgresRecurringScheduleRepository:
             enabled=row[7],
             next_run_at=row[8].isoformat(),
             created_at=row[9].isoformat(),
+            on_failure=row[10],
         )
 
     def create(
@@ -206,14 +226,15 @@ class PostgresRecurringScheduleRepository:
         promote: bool | None,
         next_run_at: str,
         created_at: str,
+        on_failure: str | None = None,
     ) -> RecurringSchedule:
         with self._conn.cursor() as cur:
             cur.execute(
                 f"""
                 INSERT INTO recurring_schedules
                     (workflow_name, cron_expression, start_from, stop_after, input_versions, promote,
-                     next_run_at, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     next_run_at, created_at, on_failure)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {self._COLUMNS}
                 """,
                 (
@@ -225,6 +246,7 @@ class PostgresRecurringScheduleRepository:
                     promote,
                     next_run_at,
                     created_at,
+                    on_failure,
                 ),
             )
             return self._recurring_from_row(cur.fetchone())
@@ -257,7 +279,7 @@ class PostgresRecurringScheduleRepository:
 class PostgresWorkflowRunRepository:
     _COLUMNS = (
         "id, workflow_name, start_from, stop_after, input_versions, promote, "
-        "status, requested_at, started_at, finished_at, error, cancel_requested"
+        "status, requested_at, started_at, finished_at, error, cancel_requested, on_failure"
     )
 
     def __init__(self, dsn: str):
@@ -283,6 +305,7 @@ class PostgresWorkflowRunRepository:
             finished_at=row[9].isoformat() if row[9] else None,
             error=row[10],
             cancel_requested=row[11],
+            on_failure=row[12],
         )
 
     def get(self, workflow_name: str, run_id: int) -> WorkflowRun | None:
@@ -331,11 +354,13 @@ class PostgresStageRunRepository:
             started_at=row[9].isoformat() if row[9] else None,
             finished_at=row[10].isoformat() if row[10] else None,
             error=row[11],
+            attempts=row[12],
+            used_fallback=row[13],
         )
 
     _COLUMNS = (
         "id, workflow_run_id, workflow_name, stage_name, input_versions, promote, "
-        "output_version, status, requested_at, started_at, finished_at, error"
+        "output_version, status, requested_at, started_at, finished_at, error, attempts, used_fallback"
     )
 
     def get(self, workflow_name: str, stage_run_id: int) -> StageRun | None:
@@ -362,16 +387,19 @@ class PostgresStageRunRepository:
                 (RunStatus.RUNNING.value, started_at, stage_run_id),
             )
 
-    def mark_completed(self, stage_run_id: int, finished_at: str, output_version: int | None) -> None:
+    def mark_completed(
+        self, stage_run_id: int, finished_at: str, output_version: int | None, attempts: int = 1
+    ) -> None:
         with self._conn.cursor() as cur:
             cur.execute(
-                "UPDATE stage_runs SET status = %s, finished_at = %s, output_version = %s WHERE id = %s",
-                (RunStatus.COMPLETED.value, finished_at, output_version, stage_run_id),
+                "UPDATE stage_runs SET status = %s, finished_at = %s, output_version = %s, "
+                "attempts = %s WHERE id = %s",
+                (RunStatus.COMPLETED.value, finished_at, output_version, attempts, stage_run_id),
             )
 
-    def mark_failed(self, stage_run_id: int, finished_at: str, error: str) -> None:
+    def mark_failed(self, stage_run_id: int, finished_at: str, error: str, attempts: int = 1) -> None:
         with self._conn.cursor() as cur:
             cur.execute(
-                "UPDATE stage_runs SET status = %s, finished_at = %s, error = %s WHERE id = %s",
-                (RunStatus.FAILED.value, finished_at, error, stage_run_id),
+                "UPDATE stage_runs SET status = %s, finished_at = %s, error = %s, attempts = %s WHERE id = %s",
+                (RunStatus.FAILED.value, finished_at, error, attempts, stage_run_id),
             )

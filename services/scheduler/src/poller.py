@@ -28,13 +28,18 @@ Three phases, all re-run every tick:
   reachable-but-undispatched stages remain. A worker never sees more than
   one stage; DAG order and range lives here, not in the Runner.
 
-A workflow whose registry declares `on_failure="fallback"` doesn't halt when
-a stage fails -- the Scheduler treats it as if that stage had produced its
+A workflow whose *effective* on_failure is "fallback" doesn't halt when a
+stage fails -- the Scheduler treats it as if that stage had produced its
 currently-promoted resource version instead (same `input_versions`-pinning
-mechanism `start_from` already uses), and keeps dispatching downstream.
-That, and resolving a workflow root's dependency (a name with no
-registered stage -- expected to already be an injected resource) to its
-current version, are the two things here that reach outside this
+mechanism `start_from` already uses), keeps dispatching downstream, and
+marks that StageRun `used_fallback` so it's visible later that this run
+(or part of it) is building on a stale value, not a fresh one. "Effective"
+because a run's own `on_failure` (set by the client that triggered it)
+overrides the workflow's code-declared StageRegistry default when set --
+None means fall through to that default, same idea as `promote` already
+resolves. That, and resolving a workflow root's dependency (a name with
+no registered stage -- expected to already be an injected resource) to
+its current version, are the two things here that reach outside this
 service's own Postgres DB and Redis: both ask resource_store, via the
 same `ResourceClient` the Runner already uses.
 
@@ -84,6 +89,7 @@ def _intake_recurring(store: ScheduleStore) -> None:
             recurring.stop_after,
             recurring.input_versions,
             promote,
+            on_failure=recurring.on_failure,
         )
         next_run_at = croniter(recurring.cron_expression, now).get_next(datetime).isoformat()
         store.advance_recurring_schedule(recurring.id, next_run_at)
@@ -104,6 +110,7 @@ def _intake(store: ScheduleStore, queue: RunQueue) -> None:
             schedule.stop_after,
             schedule.input_versions,
             promote,
+            on_failure=schedule.on_failure,
         )
         store.mark_schedule_dispatched(schedule.id, run_id=run_id)
 
@@ -159,7 +166,8 @@ def _progress(
         if failed:
             failure = failed[0]
             fell_back = False
-            if registry.on_failure == "fallback":
+            effective_on_failure = run.on_failure if run.on_failure is not None else registry.on_failure
+            if effective_on_failure == "fallback":
                 try:
                     fallback_version, _ = resources.get(failure.stage_name)
                 except Exception:  # noqa: BLE001 -- no current version, store unreachable, etc.
@@ -167,6 +175,7 @@ def _progress(
                 if fallback_version is not None:
                     done[failure.stage_name] = fallback_version
                     fell_back = True
+                    store.mark_stage_run_used_fallback(failure.id)
             if not fell_back:
                 store.mark_workflow_run_failed(run.id, error=f"{failure.stage_name}: {failure.error}")
                 continue

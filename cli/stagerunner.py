@@ -2,14 +2,15 @@
   uv run python cli/stagerunner.py run <workflow-name>
       [--stage NAME | --start-from NAME] [--stop-after NAME]
       [--input <resource>=<version> ...] [--promote] [--at TIMESTAMP]
-      [--base-url URL] [--no-wait]
+      [--on-failure {halt,fallback}] [--base-url URL] [--no-wait]
 
   uv run python cli/stagerunner.py resource upload <name> <file>
       [--promote | --no-promote] [--base-url URL]
 
   uv run python cli/stagerunner.py recurring create <workflow-name> --cron "<expr>"
       [--stage NAME | --start-from NAME] [--stop-after NAME]
-      [--input <resource>=<version> ...] [--promote] [--base-url URL]
+      [--input <resource>=<version> ...] [--promote]
+      [--on-failure {halt,fallback}] [--base-url URL]
   uv run python cli/stagerunner.py recurring list <workflow-name> [--base-url URL]
   uv run python cli/stagerunner.py recurring cancel <workflow-name> <id> [--base-url URL]
 
@@ -49,6 +50,10 @@ the Scheduler fires it on `--cron`'s cadence (standard 5-field cron syntax),
 each firing a plain run with the flags given here. `recurring cancel`
 disables it (kept, not deleted, so `recurring list` still shows its
 history).
+
+`--on-failure {halt,fallback}` overrides the workflow's code-declared
+StageRegistry default for this run (or every firing of this recurring
+schedule) only -- omit it to use that default.
 """
 
 from __future__ import annotations
@@ -117,12 +122,17 @@ def _run(args: argparse.Namespace) -> int:
         body["promote"] = True
     if args.at is not None:
         body["run_at"] = args.at
+    if args.on_failure is not None:
+        body["on_failure"] = args.on_failure
 
     client = httpx.Client(base_url=args.base_url)
     response = client.post(f"/workflows/{args.workflow}/runs", json=body)
 
     if response.status_code == 404:
         print(f"error: no workflow {args.workflow!r}", file=sys.stderr)
+        return 1
+    if response.status_code == 400:
+        print(f"error: {response.json().get('detail', response.text)}", file=sys.stderr)
         return 1
     response.raise_for_status()
     schedule = response.json()
@@ -165,6 +175,8 @@ def _recurring_create(args: argparse.Namespace) -> int:
         body["input_versions"] = dict(args.input_versions)
     if args.promote:
         body["promote"] = True
+    if args.on_failure is not None:
+        body["on_failure"] = args.on_failure
 
     client = httpx.Client(base_url=args.base_url)
     response = client.post(f"/workflows/{args.workflow}/recurring-schedules", json=body)
@@ -235,6 +247,11 @@ def main(argv: list[str] | None = None) -> int:
         type=_parse_at,
         help="delay dispatch until this time (ISO 8601, assumed UTC if no timezone given); implies --no-wait",
     )
+    run_parser.add_argument(
+        "--on-failure",
+        choices=["halt", "fallback"],
+        help="override the workflow's code-declared on-failure behavior for this run only",
+    )
     run_parser.add_argument("--base-url", default="http://localhost:8080", help="API gateway base URL")
     run_parser.add_argument(
         "--no-wait", action="store_true", help="Request the run and return immediately"
@@ -287,6 +304,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     recurring_create_parser.add_argument(
         "--promote", action="store_true", help="make each firing's produced versions current"
+    )
+    recurring_create_parser.add_argument(
+        "--on-failure",
+        choices=["halt", "fallback"],
+        help="override the workflow's code-declared on-failure behavior for every firing of this schedule",
     )
     recurring_create_parser.add_argument(
         "--base-url", default="http://localhost:8080", help="API gateway base URL"

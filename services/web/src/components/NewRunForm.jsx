@@ -14,6 +14,7 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
   const [justThisStage, setJustThisStage] = useState(false)
   const [inputs, setInputs] = useState([]) // [{ key, versions: [numbers], value }]
   const [promote, setPromote] = useState(false)
+  const [onFailure, setOnFailure] = useState('') // '' = workflow default
   const [runAt, setRunAt] = useState('') // datetime-local string, browser-local time; '' = now
   const [cron, setCron] = useState('')
   const [formError, setFormError] = useState(null)
@@ -111,6 +112,7 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
       body.input_versions = inputVersions
     }
     if (promote) body.promote = true
+    if (onFailure) body.on_failure = onFailure
 
     setSubmitting(true)
     try {
@@ -210,6 +212,15 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
         <label className="checkbox">
           <input type="checkbox" checked={promote} onChange={(e) => setPromote(e.target.checked)} />
           Promote produced versions to current
+        </label>
+
+        <label>
+          On failure
+          <select value={onFailure} onChange={(e) => setOnFailure(e.target.value)}>
+            <option value="">(Workflow default)</option>
+            <option value="halt">Halt</option>
+            <option value="fallback">Fallback to last promoted version</option>
+          </select>
         </label>
 
         {mode === 'once' ? (

@@ -25,3 +25,7 @@ class InvalidCronExpressionError(Exception):
 class RunNotCancellableError(Exception):
     """Raised when trying to cancel a run that's already terminal
     (completed, failed, or already cancelled)."""
+
+
+class InvalidOnFailureError(Exception):
+    """Raised when on_failure isn't one of "halt" or "fallback"."""

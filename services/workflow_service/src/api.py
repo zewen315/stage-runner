@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict
 
 from errors import (
     InvalidCronExpressionError,
+    InvalidOnFailureError,
     RecurringScheduleNotFoundError,
     RunNotCancellableError,
     RunNotFoundError,
@@ -120,6 +121,11 @@ async def handle_run_not_cancellable(request: Request, exc: RunNotCancellableErr
     return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
+@app.exception_handler(InvalidOnFailureError)
+async def handle_invalid_on_failure(request: Request, exc: InvalidOnFailureError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
 class ScheduleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -147,6 +153,7 @@ class WorkflowRunResponse(BaseModel):
     finished_at: str | None
     error: str | None
     cancel_requested: bool
+    on_failure: str | None
 
 
 class StageRunResponse(BaseModel):
@@ -164,6 +171,8 @@ class StageRunResponse(BaseModel):
     started_at: str | None
     finished_at: str | None
     error: str | None
+    attempts: int
+    used_fallback: bool
 
 
 class StageInfoResponse(BaseModel):
@@ -171,6 +180,7 @@ class StageInfoResponse(BaseModel):
 
     name: str
     depends_on: list[str]
+    retries: int
 
 
 class RecurringScheduleResponse(BaseModel):
@@ -186,6 +196,7 @@ class RecurringScheduleResponse(BaseModel):
     enabled: bool
     next_run_at: str
     created_at: str
+    on_failure: str | None
 
 
 class RequestRunRequest(BaseModel):
@@ -194,6 +205,7 @@ class RequestRunRequest(BaseModel):
     input_versions: dict[str, int] | None = None
     promote: bool | None = None
     run_at: str | None = None
+    on_failure: str | None = None
 
 
 class CreateRecurringScheduleRequest(BaseModel):
@@ -202,14 +214,17 @@ class CreateRecurringScheduleRequest(BaseModel):
     stop_after: str | None = None
     input_versions: dict[str, int] | None = None
     promote: bool | None = None
+    on_failure: str | None = None
 
 
 class CompleteStageRunRequest(BaseModel):
     output_version: int | None = None
+    attempts: int = 1
 
 
 class FailStageRunRequest(BaseModel):
     error: str
+    attempts: int = 1
 
 
 @app.get("/workflows", response_model=list[str])
@@ -230,7 +245,13 @@ def request_run(
 ):
     body = body or RequestRunRequest()
     schedule = service.request_run(
-        name, body.start_from, body.stop_after, body.input_versions, body.promote, body.run_at
+        name,
+        body.start_from,
+        body.stop_after,
+        body.input_versions,
+        body.promote,
+        body.run_at,
+        body.on_failure,
     )
     return service.get_schedule_status(name, schedule.id)
 
@@ -252,7 +273,13 @@ def create_recurring_schedule(
     name: str, body: CreateRecurringScheduleRequest, service: WorkflowService = Depends(get_service)
 ):
     return service.create_recurring_schedule(
-        name, body.cron_expression, body.start_from, body.stop_after, body.input_versions, body.promote
+        name,
+        body.cron_expression,
+        body.start_from,
+        body.stop_after,
+        body.input_versions,
+        body.promote,
+        body.on_failure,
     )
 
 
@@ -305,7 +332,7 @@ def complete_stage_run(
     body: CompleteStageRunRequest,
     service: WorkflowService = Depends(get_service),
 ) -> None:
-    service.complete_stage_run(name, stage_run_id, body.output_version)
+    service.complete_stage_run(name, stage_run_id, body.output_version, body.attempts)
 
 
 @app.post("/workflows/{name}/stage-runs/{stage_run_id}/fail", status_code=204)
@@ -315,7 +342,7 @@ def fail_stage_run(
     body: FailStageRunRequest,
     service: WorkflowService = Depends(get_service),
 ) -> None:
-    service.fail_stage_run(name, stage_run_id, body.error)
+    service.fail_stage_run(name, stage_run_id, body.error, body.attempts)
 
 
 @app.get("/healthz")

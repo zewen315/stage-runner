@@ -105,6 +105,8 @@ export default function RunDetail() {
           <dd>{run.stop_after || '(run to completion)'}</dd>
           <dt>Promote</dt>
           <dd>{String(run.promote)}</dd>
+          <dt>On failure</dt>
+          <dd>{run.on_failure || '(workflow default)'}</dd>
         </dl>
         {run.error && <p className="error run-error">{run.error}</p>}
         {stopError && <p className="error run-error">{stopError}</p>}
@@ -131,7 +133,15 @@ function RanStageCard({ sr, onRunFromHere }) {
     <div className={`stage-card status-border-${sr.status}`}>
       <div className="stage-card-top">
         <span className="stage-name">{sr.stage_name}</span>
-        <span className={`status status-${sr.status}`}>{sr.status}</span>
+        <span className="stage-card-badges">
+          {sr.used_fallback && (
+            <span className="badge badge-fallback" title="This stage failed; the run continued using its previously-promoted resource version instead.">
+              used fallback
+            </span>
+          )}
+          {sr.attempts > 1 && <span className="badge badge-attempts">{sr.attempts} attempts</span>}
+          <span className={`status status-${sr.status}`}>{sr.status}</span>
+        </span>
       </div>
       <div className="stage-card-meta">
         <span>in: {formatResources(sr.input_versions)}</span>
