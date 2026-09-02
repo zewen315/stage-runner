@@ -13,13 +13,17 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from models import ActiveWorkflowRun, PendingSchedule, StageRunRecord
+from models import ActiveWorkflowRun, DueRecurringSchedule, PendingSchedule, StageRunRecord
 
 
 class ScheduleStore(Protocol):
     def pending_schedules(self) -> list[PendingSchedule]: ...
 
     def mark_schedule_dispatched(self, schedule_id: int, *, run_id: int) -> None: ...
+
+    def due_recurring_schedules(self) -> list[DueRecurringSchedule]: ...
+
+    def advance_recurring_schedule(self, recurring_schedule_id: int, next_run_at: str) -> None: ...
 
     def create_workflow_run(
         self,

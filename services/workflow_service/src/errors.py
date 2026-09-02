@@ -12,3 +12,11 @@ class StageRunNotFoundError(Exception):
 
 class ScheduleNotFoundError(Exception):
     """Raised when a requested schedule id doesn't exist for the given workflow."""
+
+
+class RecurringScheduleNotFoundError(Exception):
+    """Raised when a requested recurring schedule id doesn't exist for the given workflow."""
+
+
+class InvalidCronExpressionError(Exception):
+    """Raised when a recurring schedule's cron_expression can't be parsed."""

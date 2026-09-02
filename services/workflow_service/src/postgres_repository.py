@@ -17,7 +17,7 @@ from __future__ import annotations
 import psycopg
 from psycopg.types.json import Jsonb
 
-from models import RunStatus, Schedule, StageRun, WorkflowRun
+from models import RecurringSchedule, RunStatus, Schedule, StageRun, WorkflowRun
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -63,6 +63,23 @@ CREATE TABLE IF NOT EXISTS schedules (
     run_at         TIMESTAMPTZ,
     dispatched_at  TIMESTAMPTZ,
     run_id         BIGINT REFERENCES runs(id)
+);
+
+-- A standing rule the Scheduler fires on a cadence -- distinct from
+-- `schedules` above (a one-off trigger request): this table is never
+-- "dispatched" itself, it just spawns a plain WorkflowRun each time
+-- next_run_at comes due, via these same defaults.
+CREATE TABLE IF NOT EXISTS recurring_schedules (
+    id              BIGSERIAL PRIMARY KEY,
+    workflow_name   TEXT NOT NULL,
+    cron_expression TEXT NOT NULL,
+    start_from      TEXT,
+    stop_after      TEXT,
+    input_versions  JSONB,
+    promote         BOOLEAN,
+    enabled         BOOLEAN NOT NULL DEFAULT true,
+    next_run_at     TIMESTAMPTZ NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL
 );
 """
 
@@ -145,6 +162,93 @@ class PostgresScheduleRepository:
                 (workflow_name,),
             )
             return [self._schedule_from_row(row) for row in cur.fetchall()]
+
+
+class PostgresRecurringScheduleRepository:
+    _COLUMNS = (
+        "id, workflow_name, cron_expression, start_from, stop_after, input_versions, promote, "
+        "enabled, next_run_at, created_at"
+    )
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg.connect(dsn, autocommit=True)
+        with self._conn.cursor() as cur:
+            cur.execute(_SCHEMA)
+
+    def close(self) -> None:
+        self._conn.close()
+
+    @staticmethod
+    def _recurring_from_row(row) -> RecurringSchedule:
+        return RecurringSchedule(
+            id=row[0],
+            workflow_name=row[1],
+            cron_expression=row[2],
+            start_from=row[3],
+            stop_after=row[4],
+            input_versions=row[5],
+            promote=row[6],
+            enabled=row[7],
+            next_run_at=row[8].isoformat(),
+            created_at=row[9].isoformat(),
+        )
+
+    def create(
+        self,
+        workflow_name: str,
+        cron_expression: str,
+        start_from: str | None,
+        stop_after: str | None,
+        input_versions: dict[str, int] | None,
+        promote: bool | None,
+        next_run_at: str,
+        created_at: str,
+    ) -> RecurringSchedule:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO recurring_schedules
+                    (workflow_name, cron_expression, start_from, stop_after, input_versions, promote,
+                     next_run_at, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING {self._COLUMNS}
+                """,
+                (
+                    workflow_name,
+                    cron_expression,
+                    start_from,
+                    stop_after,
+                    Jsonb(input_versions) if input_versions is not None else None,
+                    promote,
+                    next_run_at,
+                    created_at,
+                ),
+            )
+            return self._recurring_from_row(cur.fetchone())
+
+    def get(self, workflow_name: str, recurring_schedule_id: int) -> RecurringSchedule | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {self._COLUMNS} FROM recurring_schedules WHERE id = %s AND workflow_name = %s",
+                (recurring_schedule_id, workflow_name),
+            )
+            row = cur.fetchone()
+        return self._recurring_from_row(row) if row else None
+
+    def list_for_workflow(self, workflow_name: str) -> list[RecurringSchedule]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {self._COLUMNS} FROM recurring_schedules WHERE workflow_name = %s ORDER BY id",
+                (workflow_name,),
+            )
+            return [self._recurring_from_row(row) for row in cur.fetchall()]
+
+    def set_enabled(self, recurring_schedule_id: int, enabled: bool) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE recurring_schedules SET enabled = %s WHERE id = %s",
+                (enabled, recurring_schedule_id),
+            )
 
 
 class PostgresWorkflowRunRepository:

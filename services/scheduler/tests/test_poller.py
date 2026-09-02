@@ -130,6 +130,68 @@ class TestRunAt:
         assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
 
 
+class TestRecurringIntake:
+    def test_due_recurring_schedule_spawns_a_run_and_dispatches(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_recurring_schedule("feed_ranking", next_run_at=_in(-timedelta(minutes=1)))
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert len(store.active_workflow_runs()) == 1
+        assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
+
+    def test_recurring_schedule_uses_its_own_run_shape_defaults(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_recurring_schedule(
+            "feed_ranking",
+            start_from="doubled",
+            stop_after="doubled",
+            input_versions={"raw": 5},
+            next_run_at=_in(-timedelta(minutes=1)),
+        )
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["doubled"]
+        assert queue.enqueued[0]["input_versions"] == {"raw": 5}
+
+    def test_not_yet_due_recurring_schedule_does_not_fire(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_recurring_schedule("feed_ranking", next_run_at=_in(timedelta(hours=1)))
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert store.active_workflow_runs() == []
+        assert queue.enqueued == []
+
+    def test_disabled_recurring_schedule_never_fires(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_recurring_schedule(
+            "feed_ranking", next_run_at=_in(-timedelta(minutes=1)), enabled=False
+        )
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert store.active_workflow_runs() == []
+
+    def test_firing_advances_next_run_at_so_it_does_not_refire_immediately(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_recurring_schedule(
+            "feed_ranking", cron_expression="* * * * *", next_run_at=_in(-timedelta(minutes=1))
+        )
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+        assert len(store.active_workflow_runs()) == 1
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+        assert len(store.active_workflow_runs()) == 1  # no second run spawned this tick
+
+
 class TestPromoteResolution:
     def test_full_run_defaults_promote_true(self):
         store = InMemoryScheduleStore()

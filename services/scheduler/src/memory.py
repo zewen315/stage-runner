@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from models import ActiveWorkflowRun, PendingSchedule, StageRunRecord
+from models import ActiveWorkflowRun, DueRecurringSchedule, PendingSchedule, StageRunRecord
 
 
 class InMemoryScheduleStore:
@@ -15,6 +15,9 @@ class InMemoryScheduleStore:
 
         self._stage_runs: dict[int, dict] = {}
         self._next_stage_run_id = 1
+
+        self._recurring_schedules: dict[int, dict] = {}
+        self._next_recurring_schedule_id = 1
 
     # -- test-seeding helpers --------------------------------------------
 
@@ -39,6 +42,31 @@ class InMemoryScheduleStore:
         }
         self._next_schedule_id += 1
         return schedule_id
+
+    def add_recurring_schedule(
+        self,
+        workflow_name: str,
+        cron_expression: str = "* * * * *",
+        start_from: str | None = None,
+        stop_after: str | None = None,
+        input_versions: dict[str, int] | None = None,
+        promote: bool | None = None,
+        next_run_at: str | None = None,
+        enabled: bool = True,
+    ) -> int:
+        recurring_schedule_id = self._next_recurring_schedule_id
+        self._recurring_schedules[recurring_schedule_id] = {
+            "workflow_name": workflow_name,
+            "cron_expression": cron_expression,
+            "start_from": start_from,
+            "stop_after": stop_after,
+            "input_versions": input_versions,
+            "promote": promote,
+            "next_run_at": next_run_at or datetime.now(timezone.utc).isoformat(),
+            "enabled": enabled,
+        }
+        self._next_recurring_schedule_id += 1
+        return recurring_schedule_id
 
     def add_workflow_run(
         self,
@@ -110,6 +138,25 @@ class InMemoryScheduleStore:
     def mark_schedule_dispatched(self, schedule_id: int, *, run_id: int) -> None:
         self._schedules[schedule_id]["dispatched"] = True
         self._schedules[schedule_id]["run_id"] = run_id
+
+    def due_recurring_schedules(self) -> list[DueRecurringSchedule]:
+        now = datetime.now(timezone.utc).isoformat()
+        return [
+            DueRecurringSchedule(
+                id=rid,
+                workflow_name=r["workflow_name"],
+                cron_expression=r["cron_expression"],
+                start_from=r["start_from"],
+                stop_after=r["stop_after"],
+                input_versions=r["input_versions"],
+                promote=r["promote"],
+            )
+            for rid, r in self._recurring_schedules.items()
+            if r["enabled"] and r["next_run_at"] <= now
+        ]
+
+    def advance_recurring_schedule(self, recurring_schedule_id: int, next_run_at: str) -> None:
+        self._recurring_schedules[recurring_schedule_id]["next_run_at"] = next_run_at
 
     def create_workflow_run(
         self,

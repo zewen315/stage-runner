@@ -60,6 +60,26 @@ class Schedule:
 
 
 @dataclass(frozen=True)
+class RecurringSchedule:
+    """A standing rule the Scheduler fires on a cadence, spawning a plain
+    WorkflowRun each time (with these defaults) rather than a client
+    triggering one directly. `enabled=False` is how one is cancelled --
+    kept, not deleted, so a workflow's recurring history stays
+    inspectable."""
+
+    id: int
+    workflow_name: str
+    cron_expression: str
+    start_from: str | None
+    stop_after: str | None
+    input_versions: dict[str, int] | None
+    promote: bool | None
+    enabled: bool
+    next_run_at: str
+    created_at: str
+
+
+@dataclass(frozen=True)
 class StageInfo:
     """A stage's name and its direct dependencies, as declared in the
     workflow's own registry -- not persisted anywhere, just a read

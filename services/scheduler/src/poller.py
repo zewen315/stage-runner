@@ -1,6 +1,12 @@
 """Scheduler: the only thing that decides what runs next.
 
-Two phases, both re-run every tick:
+Three phases, all re-run every tick:
+- recurring intake: for every enabled `recurring_schedules` row whose
+  next_run_at has arrived, spawn a plain WorkflowRun with that row's
+  defaults (exactly like a one-off Schedule's own intake below -- the
+  rule itself never runs, it just mints instances) and advance
+  next_run_at to the next cron occurrence. A `recurring_schedules` row
+  never touches `schedules` at all; it goes straight to a WorkflowRun.
 - intake: drain undispatched `schedules` into a `WorkflowRun` (never
   queued, pure tracking). `promote` resolves here if the caller didn't
   specify one: true only for a full run (`start_from` and `stop_after`
@@ -40,9 +46,11 @@ from __future__ import annotations
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from croniter import croniter
 from dag import UnknownDependencyError, reachable_from, topological_order
 from resource_store_client import ResourceClient
 from stages import StageRegistry
@@ -55,8 +63,24 @@ RegistryProvider = Callable[[str], StageRegistry]
 def poll_once(
     store: ScheduleStore, queue: RunQueue, registry_provider: RegistryProvider, resources: ResourceClient
 ) -> None:
+    _intake_recurring(store)
     _intake(store, queue)
     _progress(store, queue, registry_provider, resources)
+
+
+def _intake_recurring(store: ScheduleStore) -> None:
+    now = datetime.now(timezone.utc)
+    for recurring in store.due_recurring_schedules():
+        promote = _resolve_promote(recurring.promote, recurring.start_from, recurring.stop_after)
+        store.create_workflow_run(
+            recurring.workflow_name,
+            recurring.start_from,
+            recurring.stop_after,
+            recurring.input_versions,
+            promote,
+        )
+        next_run_at = croniter(recurring.cron_expression, now).get_next(datetime).isoformat()
+        store.advance_recurring_schedule(recurring.id, next_run_at)
 
 
 def _resolve_promote(promote: bool | None, start_from: str | None, stop_after: str | None) -> bool:

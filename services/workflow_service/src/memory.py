@@ -2,7 +2,55 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from models import RunStatus, Schedule, StageRun, WorkflowRun
+from models import RecurringSchedule, RunStatus, Schedule, StageRun, WorkflowRun
+
+
+class InMemoryRecurringScheduleRepository:
+    def __init__(self) -> None:
+        self._recurring_schedules: dict[int, RecurringSchedule] = {}
+        self._next_id = 1
+
+    def create(
+        self,
+        workflow_name: str,
+        cron_expression: str,
+        start_from: str | None,
+        stop_after: str | None,
+        input_versions: dict[str, int] | None,
+        promote: bool | None,
+        next_run_at: str,
+        created_at: str,
+    ) -> RecurringSchedule:
+        recurring = RecurringSchedule(
+            id=self._next_id,
+            workflow_name=workflow_name,
+            cron_expression=cron_expression,
+            start_from=start_from,
+            stop_after=stop_after,
+            input_versions=input_versions,
+            promote=promote,
+            enabled=True,
+            next_run_at=next_run_at,
+            created_at=created_at,
+        )
+        self._recurring_schedules[recurring.id] = recurring
+        self._next_id += 1
+        return recurring
+
+    def get(self, workflow_name: str, recurring_schedule_id: int) -> RecurringSchedule | None:
+        recurring = self._recurring_schedules.get(recurring_schedule_id)
+        if recurring is None or recurring.workflow_name != workflow_name:
+            return None
+        return recurring
+
+    def list_for_workflow(self, workflow_name: str) -> list[RecurringSchedule]:
+        matching = [r for r in self._recurring_schedules.values() if r.workflow_name == workflow_name]
+        return sorted(matching, key=lambda r: r.id)
+
+    def set_enabled(self, recurring_schedule_id: int, enabled: bool) -> None:
+        self._recurring_schedules[recurring_schedule_id] = replace(
+            self._recurring_schedules[recurring_schedule_id], enabled=enabled
+        )
 
 
 class InMemoryScheduleRepository:

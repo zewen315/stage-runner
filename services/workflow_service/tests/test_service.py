@@ -2,8 +2,20 @@ from datetime import datetime, timezone
 
 import pytest
 
-from errors import RunNotFoundError, ScheduleNotFoundError, StageRunNotFoundError, WorkflowNotFoundError
-from memory import InMemoryScheduleRepository, InMemoryStageRunRepository, InMemoryWorkflowRunRepository
+from errors import (
+    InvalidCronExpressionError,
+    RecurringScheduleNotFoundError,
+    RunNotFoundError,
+    ScheduleNotFoundError,
+    StageRunNotFoundError,
+    WorkflowNotFoundError,
+)
+from memory import (
+    InMemoryRecurringScheduleRepository,
+    InMemoryScheduleRepository,
+    InMemoryStageRunRepository,
+    InMemoryWorkflowRunRepository,
+)
 from models import RunStatus, StageRun, WorkflowRun
 from service import WorkflowService
 
@@ -32,8 +44,13 @@ def stage_runs():
 
 
 @pytest.fixture
-def service(schedules, workflow_runs, stage_runs, workflows_root):
-    return WorkflowService(schedules, workflow_runs, stage_runs, workflows_root)
+def recurring_schedules():
+    return InMemoryRecurringScheduleRepository()
+
+
+@pytest.fixture
+def service(schedules, workflow_runs, stage_runs, workflows_root, recurring_schedules):
+    return WorkflowService(schedules, workflow_runs, stage_runs, workflows_root, recurring_schedules)
 
 
 def _write_stage_workflow(workflows_root, name):
@@ -218,6 +235,51 @@ class TestListPendingSchedules:
     def test_unknown_workflow_raises(self, service):
         with pytest.raises(WorkflowNotFoundError):
             service.list_pending_schedules("does_not_exist")
+
+
+class TestRecurringSchedules:
+    def test_create_computes_next_run_at_and_defaults_enabled(self, service):
+        recurring = service.create_recurring_schedule("feed_ranking", "* * * * *")
+
+        assert recurring.workflow_name == "feed_ranking"
+        assert recurring.cron_expression == "* * * * *"
+        assert recurring.enabled is True
+        assert recurring.next_run_at > recurring.created_at
+
+    def test_create_records_run_shape_defaults(self, service):
+        recurring = service.create_recurring_schedule(
+            "feed_ranking", "0 * * * *", start_from="score_items", promote=True
+        )
+
+        assert recurring.start_from == "score_items"
+        assert recurring.promote is True
+
+    def test_invalid_cron_expression_raises(self, service):
+        with pytest.raises(InvalidCronExpressionError):
+            service.create_recurring_schedule("feed_ranking", "not a cron")
+
+    def test_create_unknown_workflow_raises(self, service):
+        with pytest.raises(WorkflowNotFoundError):
+            service.create_recurring_schedule("does_not_exist", "* * * * *")
+
+    def test_list_returns_created_schedules_for_that_workflow(self, service):
+        service.create_recurring_schedule("feed_ranking", "* * * * *")
+
+        recurring = service.list_recurring_schedules("feed_ranking")
+
+        assert len(recurring) == 1
+
+    def test_cancel_disables_but_keeps_it_listed(self, service):
+        created = service.create_recurring_schedule("feed_ranking", "* * * * *")
+
+        service.cancel_recurring_schedule("feed_ranking", created.id)
+
+        [recurring] = service.list_recurring_schedules("feed_ranking")
+        assert recurring.enabled is False
+
+    def test_cancel_unknown_raises(self, service):
+        with pytest.raises(RecurringScheduleNotFoundError):
+            service.cancel_recurring_schedule("feed_ranking", 999)
 
 
 class TestGetRun:

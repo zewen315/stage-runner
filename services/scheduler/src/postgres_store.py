@@ -15,7 +15,7 @@ from __future__ import annotations
 import psycopg
 from psycopg.types.json import Jsonb
 
-from models import ActiveWorkflowRun, PendingSchedule, StageRunRecord
+from models import ActiveWorkflowRun, DueRecurringSchedule, PendingSchedule, StageRunRecord
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -59,6 +59,19 @@ CREATE TABLE IF NOT EXISTS schedules (
     dispatched_at  TIMESTAMPTZ,
     run_id         BIGINT REFERENCES runs(id)
 );
+
+CREATE TABLE IF NOT EXISTS recurring_schedules (
+    id              BIGSERIAL PRIMARY KEY,
+    workflow_name   TEXT NOT NULL,
+    cron_expression TEXT NOT NULL,
+    start_from      TEXT,
+    stop_after      TEXT,
+    input_versions  JSONB,
+    promote         BOOLEAN,
+    enabled         BOOLEAN NOT NULL DEFAULT true,
+    next_run_at     TIMESTAMPTZ NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL
+);
 """
 
 
@@ -94,6 +107,32 @@ class PostgresScheduleStore:
             cur.execute(
                 "UPDATE schedules SET dispatched_at = now(), run_id = %s WHERE id = %s",
                 (run_id, schedule_id),
+            )
+
+    def due_recurring_schedules(self) -> list[DueRecurringSchedule]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, workflow_name, cron_expression, start_from, stop_after, input_versions, promote "
+                "FROM recurring_schedules WHERE enabled AND next_run_at <= now()"
+            )
+            return [
+                DueRecurringSchedule(
+                    id=row[0],
+                    workflow_name=row[1],
+                    cron_expression=row[2],
+                    start_from=row[3],
+                    stop_after=row[4],
+                    input_versions=row[5],
+                    promote=row[6],
+                )
+                for row in cur.fetchall()
+            ]
+
+    def advance_recurring_schedule(self, recurring_schedule_id: int, next_run_at: str) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE recurring_schedules SET next_run_at = %s WHERE id = %s",
+                (next_run_at, recurring_schedule_id),
             )
 
     def create_workflow_run(

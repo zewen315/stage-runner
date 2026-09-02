@@ -14,17 +14,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from croniter import CroniterBadCronError, croniter
+
 from dag import topological_order
 from workflow_loader import load_workflow
 
 from errors import (
+    InvalidCronExpressionError,
+    RecurringScheduleNotFoundError,
     RunNotFoundError,
     ScheduleNotFoundError,
     StageRunNotFoundError,
     WorkflowNotFoundError,
 )
-from models import RunStatus, Schedule, ScheduleStatus, StageInfo, StageRun, WorkflowRun
-from ports import ScheduleRepository, StageRunRepository, WorkflowRunRepository
+from models import RecurringSchedule, RunStatus, Schedule, ScheduleStatus, StageInfo, StageRun, WorkflowRun
+from ports import RecurringScheduleRepository, ScheduleRepository, StageRunRepository, WorkflowRunRepository
 
 
 def _utcnow() -> str:
@@ -38,11 +42,13 @@ class WorkflowService:
         workflow_runs: WorkflowRunRepository,
         stage_runs: StageRunRepository,
         workflows_root: Path,
+        recurring_schedules: RecurringScheduleRepository,
     ):
         self._schedules = schedules
         self._workflow_runs = workflow_runs
         self._stage_runs = stage_runs
         self._workflows_root = workflows_root
+        self._recurring_schedules = recurring_schedules
 
     def _require_workflow(self, name: str) -> None:
         if not (self._workflows_root / name).is_dir():
@@ -53,6 +59,14 @@ class WorkflowService:
         if schedule is None:
             raise ScheduleNotFoundError(f"no schedule {schedule_id} for workflow {workflow_name!r}")
         return schedule
+
+    def _require_recurring_schedule(self, workflow_name: str, recurring_schedule_id: int) -> RecurringSchedule:
+        recurring = self._recurring_schedules.get(workflow_name, recurring_schedule_id)
+        if recurring is None:
+            raise RecurringScheduleNotFoundError(
+                f"no recurring schedule {recurring_schedule_id} for workflow {workflow_name!r}"
+            )
+        return recurring
 
     def _require_run(self, workflow_name: str, run_id: int) -> WorkflowRun:
         run = self._workflow_runs.get(workflow_name, run_id)
@@ -152,6 +166,46 @@ class WorkflowService:
             )
             for s in self._schedules.list_pending(workflow_name)
         ]
+
+    def create_recurring_schedule(
+        self,
+        workflow_name: str,
+        cron_expression: str,
+        start_from: str | None = None,
+        stop_after: str | None = None,
+        input_versions: dict[str, int] | None = None,
+        promote: bool | None = None,
+    ) -> RecurringSchedule:
+        """Client-facing: register a standing rule. Computes the first
+        next_run_at from `cron_expression` relative to now -- the
+        Scheduler is the one that actually fires it and keeps advancing
+        next_run_at after that, on its own poll cycle, the same way it
+        alone dispatches `schedules`."""
+        self._require_workflow(workflow_name)
+        try:
+            next_run_at = croniter(cron_expression, datetime.now(timezone.utc)).get_next(datetime).isoformat()
+        except CroniterBadCronError as exc:
+            raise InvalidCronExpressionError(f"invalid cron expression {cron_expression!r}: {exc}") from exc
+        return self._recurring_schedules.create(
+            workflow_name,
+            cron_expression,
+            start_from,
+            stop_after,
+            input_versions,
+            promote,
+            next_run_at=next_run_at,
+            created_at=_utcnow(),
+        )
+
+    def list_recurring_schedules(self, workflow_name: str) -> list[RecurringSchedule]:
+        self._require_workflow(workflow_name)
+        return self._recurring_schedules.list_for_workflow(workflow_name)
+
+    def cancel_recurring_schedule(self, workflow_name: str, recurring_schedule_id: int) -> None:
+        """Disables rather than deletes -- a cancelled rule stays visible
+        in list_recurring_schedules for audit, just never fires again."""
+        self._require_recurring_schedule(workflow_name, recurring_schedule_id)
+        self._recurring_schedules.set_enabled(recurring_schedule_id, False)
 
     def list_stages(self, workflow_name: str) -> list[StageInfo]:
         """Ordered stage names plus each one's direct dependencies -- lets

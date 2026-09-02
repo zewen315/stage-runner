@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from models import Schedule, StageRun, WorkflowRun
+from models import RecurringSchedule, Schedule, StageRun, WorkflowRun
 
 
 class ScheduleRepository(Protocol):
@@ -37,6 +37,26 @@ class ScheduleRepository(Protocol):
         recent first. Once dispatched, a schedule's info is superseded by
         the WorkflowRun it created -- not returned here."""
         ...
+
+
+class RecurringScheduleRepository(Protocol):
+    def create(
+        self,
+        workflow_name: str,
+        cron_expression: str,
+        start_from: str | None,
+        stop_after: str | None,
+        input_versions: dict[str, int] | None,
+        promote: bool | None,
+        next_run_at: str,
+        created_at: str,
+    ) -> RecurringSchedule: ...
+
+    def get(self, workflow_name: str, recurring_schedule_id: int) -> RecurringSchedule | None: ...
+
+    def list_for_workflow(self, workflow_name: str) -> list[RecurringSchedule]: ...
+
+    def set_enabled(self, recurring_schedule_id: int, enabled: bool) -> None: ...
 
 
 class WorkflowRunRepository(Protocol):

@@ -14,6 +14,22 @@ class PendingSchedule:
 
 
 @dataclass(frozen=True)
+class DueRecurringSchedule:
+    """A standing rule whose next_run_at has arrived -- fires by spawning
+    a plain WorkflowRun with these defaults (see poller.py's
+    _intake_recurring), the same way a one-off Schedule does once
+    dispatched."""
+
+    id: int
+    workflow_name: str
+    cron_expression: str
+    start_from: str | None
+    stop_after: str | None
+    input_versions: dict[str, int] | None
+    promote: bool | None
+
+
+@dataclass(frozen=True)
 class ActiveWorkflowRun:
     id: int
     workflow_name: str

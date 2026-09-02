@@ -7,6 +7,12 @@
   uv run python cli/stagerunner.py resource upload <name> <file>
       [--promote | --no-promote] [--base-url URL]
 
+  uv run python cli/stagerunner.py recurring create <workflow-name> --cron "<expr>"
+      [--stage NAME | --start-from NAME] [--stop-after NAME]
+      [--input <resource>=<version> ...] [--promote] [--base-url URL]
+  uv run python cli/stagerunner.py recurring list <workflow-name> [--base-url URL]
+  uv run python cli/stagerunner.py recurring cancel <workflow-name> <id> [--base-url URL]
+
 Thin client: this only ever talks HTTP -- to the Workflow Service for
 `run`, to the Resource Store for `resource upload` (both through the
 gateway, by default). It has no DAG/execution logic of its own and no
@@ -37,6 +43,12 @@ stage's input and output is a resource, so there's no other way in. Reads
 `file` as JSON and uploads it as a new version; promotes by default (unlike
 `run`'s `--promote`) since an injected root is useless to a run until it's
 current.
+
+`recurring create` registers a standing rule instead of triggering once --
+the Scheduler fires it on `--cron`'s cadence (standard 5-field cron syntax),
+each firing a plain run with the flags given here. `recurring cancel`
+disables it (kept, not deleted, so `recurring list` still shows its
+history).
 """
 
 from __future__ import annotations
@@ -140,6 +152,56 @@ def _resource_upload(args: argparse.Namespace) -> int:
     return 0
 
 
+def _recurring_create(args: argparse.Namespace) -> int:
+    start_from = args.stage or args.start_from
+    stop_after = args.stage or args.stop_after
+
+    body: dict = {"cron_expression": args.cron}
+    if start_from is not None:
+        body["start_from"] = start_from
+    if stop_after is not None:
+        body["stop_after"] = stop_after
+    if args.input_versions:
+        body["input_versions"] = dict(args.input_versions)
+    if args.promote:
+        body["promote"] = True
+
+    client = httpx.Client(base_url=args.base_url)
+    response = client.post(f"/workflows/{args.workflow}/recurring-schedules", json=body)
+    if response.status_code in (400, 404):
+        print(f"error: {response.json().get('detail', response.text)}", file=sys.stderr)
+        return 1
+    response.raise_for_status()
+    recurring = response.json()
+    print(f"recurring schedule {recurring['id']} for {args.workflow!r}: next run at {recurring['next_run_at']}")
+    return 0
+
+
+def _recurring_list(args: argparse.Namespace) -> int:
+    client = httpx.Client(base_url=args.base_url)
+    response = client.get(f"/workflows/{args.workflow}/recurring-schedules")
+    if response.status_code == 404:
+        print(f"error: no workflow {args.workflow!r}", file=sys.stderr)
+        return 1
+    response.raise_for_status()
+
+    for r in response.json():
+        state = "enabled" if r["enabled"] else "cancelled"
+        print(f"{r['id']}: {r['cron_expression']} ({state}), next run at {r['next_run_at']}")
+    return 0
+
+
+def _recurring_cancel(args: argparse.Namespace) -> int:
+    client = httpx.Client(base_url=args.base_url)
+    response = client.post(f"/workflows/{args.workflow}/recurring-schedules/{args.id}/cancel")
+    if response.status_code == 404:
+        print(f"error: {response.json().get('detail', response.text)}", file=sys.stderr)
+        return 1
+    response.raise_for_status()
+    print(f"recurring schedule {args.id} for {args.workflow!r}: cancelled")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="stagerunner")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -195,13 +257,71 @@ def main(argv: list[str] | None = None) -> int:
     )
     upload_parser.add_argument("--base-url", default="http://localhost:8080", help="API gateway base URL")
 
+    recurring_parser = subparsers.add_parser("recurring", help="Manage recurring schedules")
+    recurring_subparsers = recurring_parser.add_subparsers(dest="recurring_command", required=True)
+
+    recurring_create_parser = recurring_subparsers.add_parser(
+        "create", help="Register a standing rule that fires a run on a cron cadence"
+    )
+    recurring_create_parser.add_argument("workflow", help="workflow name, e.g. feed_success")
+    recurring_create_parser.add_argument(
+        "--cron", required=True, metavar="EXPR", help="standard 5-field cron expression, e.g. '0 * * * *'"
+    )
+    recurring_create_parser.add_argument(
+        "--stage", metavar="NAME", help="each firing runs just this one stage"
+    )
+    recurring_create_parser.add_argument(
+        "--start-from", metavar="NAME", help="each firing starts here instead of the natural roots"
+    )
+    recurring_create_parser.add_argument(
+        "--stop-after", metavar="NAME", help="each firing stops once this stage completes"
+    )
+    recurring_create_parser.add_argument(
+        "--input",
+        action="append",
+        default=[],
+        type=_parse_input,
+        metavar="RESOURCE=VERSION",
+        dest="input_versions",
+        help="pin a dependency each firing won't itself produce; repeatable",
+    )
+    recurring_create_parser.add_argument(
+        "--promote", action="store_true", help="make each firing's produced versions current"
+    )
+    recurring_create_parser.add_argument(
+        "--base-url", default="http://localhost:8080", help="API gateway base URL"
+    )
+
+    recurring_list_parser = recurring_subparsers.add_parser("list", help="List a workflow's recurring schedules")
+    recurring_list_parser.add_argument("workflow", help="workflow name, e.g. feed_success")
+    recurring_list_parser.add_argument(
+        "--base-url", default="http://localhost:8080", help="API gateway base URL"
+    )
+
+    recurring_cancel_parser = recurring_subparsers.add_parser("cancel", help="Cancel a recurring schedule")
+    recurring_cancel_parser.add_argument("workflow", help="workflow name, e.g. feed_success")
+    recurring_cancel_parser.add_argument("id", type=int, help="recurring schedule id, from `recurring list`")
+    recurring_cancel_parser.add_argument(
+        "--base-url", default="http://localhost:8080", help="API gateway base URL"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "run":
         if args.stage is not None and (args.start_from is not None or args.stop_after is not None):
             run_parser.error("--stage cannot be combined with --start-from/--stop-after")
         return _run(args)
-    return _resource_upload(args)
+
+    if args.command == "resource":
+        return _resource_upload(args)
+
+    if args.recurring_command == "create":
+        if args.stage is not None and (args.start_from is not None or args.stop_after is not None):
+            recurring_create_parser.error("--stage cannot be combined with --start-from/--stop-after")
+        return _recurring_create(args)
+    if args.recurring_command == "list":
+        return _recurring_list(args)
+    return _recurring_cancel(args)
 
 
 if __name__ == "__main__":

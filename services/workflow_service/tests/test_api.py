@@ -9,7 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import app, get_service
-from memory import InMemoryScheduleRepository, InMemoryStageRunRepository, InMemoryWorkflowRunRepository
+from memory import (
+    InMemoryRecurringScheduleRepository,
+    InMemoryScheduleRepository,
+    InMemoryStageRunRepository,
+    InMemoryWorkflowRunRepository,
+)
 from models import RunStatus, StageRun, WorkflowRun
 from service import WorkflowService
 
@@ -32,9 +37,14 @@ def stage_runs():
 
 
 @pytest.fixture
-def client(tmp_path, schedules, workflow_runs, stage_runs):
+def recurring_schedules():
+    return InMemoryRecurringScheduleRepository()
+
+
+@pytest.fixture
+def client(tmp_path, schedules, workflow_runs, stage_runs, recurring_schedules):
     (tmp_path / "feed_ranking").mkdir()
-    service = WorkflowService(schedules, workflow_runs, stage_runs, tmp_path)
+    service = WorkflowService(schedules, workflow_runs, stage_runs, tmp_path, recurring_schedules)
     app.dependency_overrides[get_service] = lambda: service
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -149,6 +159,50 @@ def test_list_pending_schedules(client):
 
 def test_list_pending_schedules_unknown_workflow_is_404(client):
     response = client.get("/workflows/does_not_exist/schedules")
+    assert response.status_code == 404
+
+
+def test_create_recurring_schedule_returns_201(client):
+    response = client.post(
+        "/workflows/feed_ranking/recurring-schedules", json={"cron_expression": "* * * * *"}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["cron_expression"] == "* * * * *"
+    assert body["enabled"] is True
+
+
+def test_create_recurring_schedule_invalid_cron_is_400(client):
+    response = client.post(
+        "/workflows/feed_ranking/recurring-schedules", json={"cron_expression": "not a cron"}
+    )
+    assert response.status_code == 400
+
+
+def test_list_recurring_schedules(client):
+    client.post("/workflows/feed_ranking/recurring-schedules", json={"cron_expression": "* * * * *"})
+
+    response = client.get("/workflows/feed_ranking/recurring-schedules")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_cancel_recurring_schedule(client):
+    created = client.post(
+        "/workflows/feed_ranking/recurring-schedules", json={"cron_expression": "* * * * *"}
+    ).json()
+
+    response = client.post(f"/workflows/feed_ranking/recurring-schedules/{created['id']}/cancel")
+    assert response.status_code == 204
+
+    [recurring] = client.get("/workflows/feed_ranking/recurring-schedules").json()
+    assert recurring["enabled"] is False
+
+
+def test_cancel_recurring_schedule_unknown_is_404(client):
+    response = client.post("/workflows/feed_ranking/recurring-schedules/999/cancel")
     assert response.status_code == 404
 
 

@@ -27,8 +27,20 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-from errors import RunNotFoundError, ScheduleNotFoundError, StageRunNotFoundError, WorkflowNotFoundError
-from memory import InMemoryScheduleRepository, InMemoryStageRunRepository, InMemoryWorkflowRunRepository
+from errors import (
+    InvalidCronExpressionError,
+    RecurringScheduleNotFoundError,
+    RunNotFoundError,
+    ScheduleNotFoundError,
+    StageRunNotFoundError,
+    WorkflowNotFoundError,
+)
+from memory import (
+    InMemoryRecurringScheduleRepository,
+    InMemoryScheduleRepository,
+    InMemoryStageRunRepository,
+    InMemoryWorkflowRunRepository,
+)
 from service import WorkflowService
 
 
@@ -42,9 +54,11 @@ def _build_service() -> WorkflowService:
             InMemoryWorkflowRunRepository(),
             InMemoryStageRunRepository(),
             workflows_root,
+            InMemoryRecurringScheduleRepository(),
         )
 
     from postgres_repository import (
+        PostgresRecurringScheduleRepository,
         PostgresScheduleRepository,
         PostgresStageRunRepository,
         PostgresWorkflowRunRepository,
@@ -55,6 +69,7 @@ def _build_service() -> WorkflowService:
         PostgresWorkflowRunRepository(database_url),
         PostgresStageRunRepository(database_url),
         workflows_root,
+        PostgresRecurringScheduleRepository(database_url),
     )
 
 
@@ -85,6 +100,18 @@ async def handle_stage_run_not_found(request: Request, exc: StageRunNotFoundErro
 @app.exception_handler(ScheduleNotFoundError)
 async def handle_schedule_not_found(request: Request, exc: ScheduleNotFoundError) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(RecurringScheduleNotFoundError)
+async def handle_recurring_schedule_not_found(
+    request: Request, exc: RecurringScheduleNotFoundError
+) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(InvalidCronExpressionError)
+async def handle_invalid_cron_expression(request: Request, exc: InvalidCronExpressionError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 class ScheduleResponse(BaseModel):
@@ -139,12 +166,35 @@ class StageInfoResponse(BaseModel):
     depends_on: list[str]
 
 
+class RecurringScheduleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workflow_name: str
+    cron_expression: str
+    start_from: str | None
+    stop_after: str | None
+    input_versions: dict[str, int] | None
+    promote: bool | None
+    enabled: bool
+    next_run_at: str
+    created_at: str
+
+
 class RequestRunRequest(BaseModel):
     start_from: str | None = None
     stop_after: str | None = None
     input_versions: dict[str, int] | None = None
     promote: bool | None = None
     run_at: str | None = None
+
+
+class CreateRecurringScheduleRequest(BaseModel):
+    cron_expression: str
+    start_from: str | None = None
+    stop_after: str | None = None
+    input_versions: dict[str, int] | None = None
+    promote: bool | None = None
 
 
 class CompleteStageRunRequest(BaseModel):
@@ -186,6 +236,29 @@ def get_schedule_status(name: str, schedule_id: int, service: WorkflowService = 
 @app.get("/workflows/{name}/schedules", response_model=list[ScheduleResponse])
 def list_pending_schedules(name: str, service: WorkflowService = Depends(get_service)):
     return service.list_pending_schedules(name)
+
+
+@app.post(
+    "/workflows/{name}/recurring-schedules", response_model=RecurringScheduleResponse, status_code=201
+)
+def create_recurring_schedule(
+    name: str, body: CreateRecurringScheduleRequest, service: WorkflowService = Depends(get_service)
+):
+    return service.create_recurring_schedule(
+        name, body.cron_expression, body.start_from, body.stop_after, body.input_versions, body.promote
+    )
+
+
+@app.get("/workflows/{name}/recurring-schedules", response_model=list[RecurringScheduleResponse])
+def list_recurring_schedules(name: str, service: WorkflowService = Depends(get_service)):
+    return service.list_recurring_schedules(name)
+
+
+@app.post("/workflows/{name}/recurring-schedules/{recurring_schedule_id}/cancel", status_code=204)
+def cancel_recurring_schedule(
+    name: str, recurring_schedule_id: int, service: WorkflowService = Depends(get_service)
+) -> None:
+    service.cancel_recurring_schedule(name, recurring_schedule_id)
 
 
 @app.get("/workflows/{name}/runs", response_model=list[WorkflowRunResponse])
