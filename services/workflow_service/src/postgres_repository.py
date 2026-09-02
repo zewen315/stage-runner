@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS schedules (
     input_versions JSONB,
     promote        BOOLEAN,
     requested_at   TIMESTAMPTZ NOT NULL,
+    -- NULL means eligible for dispatch as soon as the Scheduler sees it;
+    -- set means the Scheduler won't dispatch it before then (see its
+    -- pending_schedules() query).
+    run_at         TIMESTAMPTZ,
     dispatched_at  TIMESTAMPTZ,
     run_id         BIGINT REFERENCES runs(id)
 );
@@ -64,6 +68,11 @@ CREATE TABLE IF NOT EXISTS schedules (
 
 
 class PostgresScheduleRepository:
+    _COLUMNS = (
+        "id, workflow_name, start_from, stop_after, input_versions, promote, "
+        "requested_at, run_at, dispatched_at, run_id"
+    )
+
     def __init__(self, dsn: str):
         self._conn = psycopg.connect(dsn, autocommit=True)
         with self._conn.cursor() as cur:
@@ -82,8 +91,9 @@ class PostgresScheduleRepository:
             input_versions=row[4],
             promote=row[5],
             requested_at=row[6].isoformat(),
-            dispatched_at=row[7].isoformat() if row[7] else None,
-            run_id=row[8],
+            run_at=row[7].isoformat() if row[7] else None,
+            dispatched_at=row[8].isoformat() if row[8] else None,
+            run_id=row[9],
         )
 
     def create(
@@ -94,14 +104,15 @@ class PostgresScheduleRepository:
         input_versions: dict[str, int] | None,
         promote: bool | None,
         requested_at: str,
+        run_at: str | None = None,
     ) -> Schedule:
         with self._conn.cursor() as cur:
             cur.execute(
-                """
-                INSERT INTO schedules (workflow_name, start_from, stop_after, input_versions, promote, requested_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, workflow_name, start_from, stop_after, input_versions, promote,
-                          requested_at, dispatched_at, run_id
+                f"""
+                INSERT INTO schedules
+                    (workflow_name, start_from, stop_after, input_versions, promote, requested_at, run_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING {self._COLUMNS}
                 """,
                 (
                     workflow_name,
@@ -110,6 +121,7 @@ class PostgresScheduleRepository:
                     Jsonb(input_versions) if input_versions is not None else None,
                     promote,
                     requested_at,
+                    run_at,
                 ),
             )
             return self._schedule_from_row(cur.fetchone())
@@ -117,11 +129,7 @@ class PostgresScheduleRepository:
     def get(self, workflow_name: str, schedule_id: int) -> Schedule | None:
         with self._conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
-                       requested_at, dispatched_at, run_id
-                FROM schedules WHERE id = %s AND workflow_name = %s
-                """,
+                f"SELECT {self._COLUMNS} FROM schedules WHERE id = %s AND workflow_name = %s",
                 (schedule_id, workflow_name),
             )
             row = cur.fetchone()
@@ -130,10 +138,9 @@ class PostgresScheduleRepository:
     def list_pending(self, workflow_name: str) -> list[Schedule]:
         with self._conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT id, workflow_name, start_from, stop_after, input_versions, promote,
-                       requested_at, dispatched_at, run_id
-                FROM schedules WHERE workflow_name = %s AND dispatched_at IS NULL ORDER BY id DESC
+                f"""
+                SELECT {self._COLUMNS} FROM schedules
+                WHERE workflow_name = %s AND dispatched_at IS NULL ORDER BY id DESC
                 """,
                 (workflow_name,),
             )

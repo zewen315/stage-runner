@@ -13,6 +13,7 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
   const [justThisStage, setJustThisStage] = useState(false)
   const [inputs, setInputs] = useState([]) // [{ key, versions: [numbers], value }]
   const [promote, setPromote] = useState(false)
+  const [runAt, setRunAt] = useState('') // datetime-local string, browser-local time; '' = now
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -104,6 +105,7 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
       body.input_versions = inputVersions
     }
     if (promote) body.promote = true
+    if (runAt) body.run_at = new Date(runAt).toISOString()
 
     setSubmitting(true)
     try {
@@ -188,6 +190,11 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
           Promote produced versions to current
         </label>
 
+        <label>
+          Run at <span className="hint-inline">(optional -- leave blank to run now)</span>
+          <input type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} />
+        </label>
+
         {formError && <p className="error">{formError}</p>}
 
         <div className="modal-actions">
@@ -195,7 +202,7 @@ export default function NewRunForm({ initialWorkflow = '', initialStartFrom = ''
             Cancel
           </button>
           <button type="submit" className="btn-primary" disabled={submitting || !workflowName}>
-            {submitting ? 'Requesting...' : 'Trigger run'}
+            {submitting ? 'Requesting...' : runAt ? 'Schedule run' : 'Trigger run'}
           </button>
         </div>
       </form>

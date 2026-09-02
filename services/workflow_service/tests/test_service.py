@@ -109,6 +109,14 @@ class TestRequestRun:
         assert schedule.stop_after is None
         assert schedule.dispatched_at is None
 
+    def test_run_at_left_unset_is_none(self, service):
+        schedule = service.request_run("feed_ranking")
+        assert schedule.run_at is None
+
+    def test_run_at_is_recorded_when_given(self, service):
+        schedule = service.request_run("feed_ranking", run_at="2099-01-01T00:00:00+00:00")
+        assert schedule.run_at == "2099-01-01T00:00:00+00:00"
+
     def test_single_stage_run_sets_start_from_and_stop_after_to_the_same_name(self, service):
         schedule = service.request_run(
             "feed_ranking",
@@ -151,6 +159,13 @@ class TestGetScheduleStatus:
         assert status.status == RunStatus.REQUESTED.value
         assert status.run_id is None
 
+    def test_undispatched_schedule_surfaces_run_at(self, service):
+        schedule = service.request_run("feed_ranking", run_at="2099-01-01T00:00:00+00:00")
+
+        status = service.get_schedule_status("feed_ranking", schedule.id)
+
+        assert status.run_at == "2099-01-01T00:00:00+00:00"
+
     def test_dispatched_schedule_proxies_run_status(self, service, schedules, workflow_runs):
         schedule = service.request_run("feed_ranking")
         run = _seed_workflow_run(workflow_runs, status=RunStatus.RUNNING)
@@ -185,6 +200,13 @@ class TestListPendingSchedules:
 
         assert [s.id for s in pending] == [second.id, second.id - 1]
         assert all(s.status == RunStatus.REQUESTED.value for s in pending)
+
+    def test_surfaces_run_at(self, service):
+        service.request_run("feed_ranking", run_at="2099-01-01T00:00:00+00:00")
+
+        [pending] = service.list_pending_schedules("feed_ranking")
+
+        assert pending.run_at == "2099-01-01T00:00:00+00:00"
 
     def test_dispatched_schedules_are_excluded(self, service, schedules, workflow_runs):
         schedule = service.request_run("feed_ranking")

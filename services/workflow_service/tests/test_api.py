@@ -109,6 +109,15 @@ def test_request_run_with_start_from_and_stop_after_returns_202(client):
     assert body["status"] == "requested"
 
 
+def test_request_run_with_run_at_returns_202(client):
+    response = client.post(
+        "/workflows/feed_ranking/runs", json={"run_at": "2099-01-01T00:00:00+00:00"}
+    )
+
+    assert response.status_code == 202
+    assert response.json()["run_at"] == "2099-01-01T00:00:00+00:00"
+
+
 def test_get_schedule_status_proxies_dispatched_run(client, schedules, workflow_runs):
     schedule = client.post("/workflows/feed_ranking/runs").json()
     workflow_runs.add(_workflow_run(id=42, status=RunStatus.RUNNING))

@@ -1,7 +1,7 @@
 """Usage:
   uv run python cli/stagerunner.py run <workflow-name>
       [--stage NAME | --start-from NAME] [--stop-after NAME]
-      [--input <resource>=<version> ...] [--promote]
+      [--input <resource>=<version> ...] [--promote] [--at TIMESTAMP]
       [--base-url URL] [--no-wait]
 
   uv run python cli/stagerunner.py resource upload <name> <file>
@@ -25,6 +25,12 @@ just that one stage). `--start-from NAME` alone resumes the rest of the
 pipeline from that stage onward. `--stop-after NAME` alone runs from the
 natural roots and stops once that stage completes.
 
+`--at TIMESTAMP` (ISO 8601; assumed UTC if it has no timezone) delays
+dispatch until then instead of as soon as the Scheduler sees it -- the
+schedule sits undispatched (visible via `GET .../schedules/{id}`) until
+its time arrives. Implies `--no-wait`: polling for a run that won't start
+for an hour isn't useful.
+
 `resource upload` is how a workflow root (a stage-less dependency, e.g.
 `raw_events`) gets its value into the system in the first place -- every
 stage's input and output is a resource, so there's no other way in. Reads
@@ -39,6 +45,7 @@ import argparse
 import json
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -49,6 +56,16 @@ def _parse_input(raw: str) -> tuple[str, int]:
     if not version:
         raise argparse.ArgumentTypeError(f"expected <resource>=<version>, got {raw!r}")
     return name, int(version)
+
+
+def _parse_at(raw: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an ISO 8601 timestamp, got {raw!r}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat()
 
 
 def _poll_schedule(client: httpx.Client, workflow: str, schedule_id: int, *, no_wait: bool) -> int:
@@ -86,6 +103,8 @@ def _run(args: argparse.Namespace) -> int:
         body["input_versions"] = dict(args.input_versions)
     if args.promote:
         body["promote"] = True
+    if args.at is not None:
+        body["run_at"] = args.at
 
     client = httpx.Client(base_url=args.base_url)
     response = client.post(f"/workflows/{args.workflow}/runs", json=body)
@@ -96,7 +115,8 @@ def _run(args: argparse.Namespace) -> int:
     response.raise_for_status()
     schedule = response.json()
 
-    return _poll_schedule(client, args.workflow, schedule["id"], no_wait=args.no_wait)
+    no_wait = args.no_wait or args.at is not None
+    return _poll_schedule(client, args.workflow, schedule["id"], no_wait=no_wait)
 
 
 def _resource_upload(args: argparse.Namespace) -> int:
@@ -146,6 +166,12 @@ def main(argv: list[str] | None = None) -> int:
         "--promote",
         action="store_true",
         help="make produced versions current (default: true for a full run, false for a partial one)",
+    )
+    run_parser.add_argument(
+        "--at",
+        metavar="TIMESTAMP",
+        type=_parse_at,
+        help="delay dispatch until this time (ISO 8601, assumed UTC if no timezone given); implies --no-wait",
     )
     run_parser.add_argument("--base-url", default="http://localhost:8080", help="API gateway base URL")
     run_parser.add_argument(

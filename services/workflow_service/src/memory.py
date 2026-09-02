@@ -18,6 +18,7 @@ class InMemoryScheduleRepository:
         input_versions: dict[str, int] | None,
         promote: bool | None,
         requested_at: str,
+        run_at: str | None = None,
     ) -> Schedule:
         schedule = Schedule(
             id=self._next_id,
@@ -27,6 +28,7 @@ class InMemoryScheduleRepository:
             input_versions=input_versions,
             promote=promote,
             requested_at=requested_at,
+            run_at=run_at,
             dispatched_at=None,
             run_id=None,
         )

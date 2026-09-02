@@ -1,8 +1,14 @@
+from datetime import datetime, timedelta, timezone
+
 from resource_store_client import InMemoryResourceClient
 from stages import StageRegistry
 
 from memory import InMemoryRunQueue, InMemoryScheduleStore
 from poller import poll_once
+
+
+def _in(delta: timedelta) -> str:
+    return (datetime.now(timezone.utc) + delta).isoformat()
 
 
 def _poll(store, queue, registry_provider, resources=None):
@@ -92,6 +98,36 @@ class TestIntake:
         assert message["stage_name"] == "doubled"
         assert message["input_versions"] == {"raw": 5}
         assert message["promote"] is False  # partial-run default
+
+
+class TestRunAt:
+    def test_future_run_at_is_not_dispatched(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_schedule("feed_ranking", run_at=_in(timedelta(hours=1)))
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert queue.enqueued == []
+        assert store.active_workflow_runs() == []
+
+    def test_past_run_at_is_dispatched(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_schedule("feed_ranking", run_at=_in(-timedelta(hours=1)))
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
+
+    def test_no_run_at_is_dispatched_immediately(self):
+        store = InMemoryScheduleStore()
+        queue = InMemoryRunQueue()
+        store.add_schedule("feed_ranking")
+
+        _poll(store, queue, _registry_provider(_linear_registry()))
+
+        assert [m["stage_name"] for m in queue.enqueued] == ["raw"]
 
 
 class TestPromoteResolution:

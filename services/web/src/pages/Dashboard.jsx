@@ -120,13 +120,14 @@ function ScheduleCard({ schedule }) {
     <div className="run-card status-border-requested">
       <div className="run-card-top">
         <span className="workflow-pill">{schedule.workflow_name}</span>
-        <span className="status status-requested">waiting</span>
+        <span className="status status-requested">{schedule.run_at ? 'scheduled' : 'waiting'}</span>
       </div>
       <div className="run-card-meta">
         <span>schedule #{schedule.id}</span>
         {schedule.start_from && <span>from {schedule.start_from}</span>}
         {schedule.stop_after && <span>to {schedule.stop_after}</span>}
       </div>
+      {schedule.run_at && <div className="run-card-time">at {formatTime(schedule.run_at)}</div>}
     </div>
   )
 }

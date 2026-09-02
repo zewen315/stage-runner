@@ -73,6 +73,7 @@ class WorkflowService:
         stop_after: str | None = None,
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
+        run_at: str | None = None,
     ) -> Schedule:
         """Client-facing: trigger a run, once. `start_from`/`stop_after`
         (both optional) narrow it to a sub-range of the workflow's DAG --
@@ -81,7 +82,11 @@ class WorkflowService:
         `input_versions` supplies whichever of `start_from`'s dependencies
         won't be produced within this run (only meaningful when
         `start_from` is set). `promote` left unset lets the Scheduler
-        apply its default (true only for a full run). Stage-name existence
+        apply its default (true only for a full run). `run_at` left unset
+        means eligible for dispatch as soon as the Scheduler sees it
+        (today's only behavior); set it to delay dispatch until then --
+        the Scheduler is the one that actually enforces this, on its own
+        pending_schedules() query, not anything here. Stage-name existence
         isn't validated here -- an unknown name fails at dispatch time
         instead, same as always; see `list_stages` below for the one place
         this service does load a workflow's registry, for a different
@@ -96,6 +101,7 @@ class WorkflowService:
             input_versions,
             promote,
             requested_at=_utcnow(),
+            run_at=run_at,
         )
 
     def get_schedule_status(self, workflow_name: str, schedule_id: int) -> ScheduleStatus:
@@ -109,6 +115,7 @@ class WorkflowService:
                 workflow_name=schedule.workflow_name,
                 start_from=schedule.start_from,
                 stop_after=schedule.stop_after,
+                run_at=schedule.run_at,
                 status=RunStatus.REQUESTED.value,
                 error=None,
                 run_id=None,
@@ -120,6 +127,7 @@ class WorkflowService:
             workflow_name=schedule.workflow_name,
             start_from=schedule.start_from,
             stop_after=schedule.stop_after,
+            run_at=schedule.run_at,
             status=run.status.value,
             error=run.error,
             run_id=run.id,
@@ -137,6 +145,7 @@ class WorkflowService:
                 workflow_name=s.workflow_name,
                 start_from=s.start_from,
                 stop_after=s.stop_after,
+                run_at=s.run_at,
                 status=RunStatus.REQUESTED.value,
                 error=None,
                 run_id=None,

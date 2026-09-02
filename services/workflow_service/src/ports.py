@@ -27,6 +27,7 @@ class ScheduleRepository(Protocol):
         input_versions: dict[str, int] | None,
         promote: bool | None,
         requested_at: str,
+        run_at: str | None = None,
     ) -> Schedule: ...
 
     def get(self, workflow_name: str, schedule_id: int) -> Schedule | None: ...

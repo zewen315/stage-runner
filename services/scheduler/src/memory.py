@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from models import ActiveWorkflowRun, PendingSchedule, StageRunRecord
 
 
@@ -23,6 +25,7 @@ class InMemoryScheduleStore:
         stop_after: str | None = None,
         input_versions: dict[str, int] | None = None,
         promote: bool | None = None,
+        run_at: str | None = None,
     ) -> int:
         schedule_id = self._next_schedule_id
         self._schedules[schedule_id] = {
@@ -31,6 +34,7 @@ class InMemoryScheduleStore:
             "stop_after": stop_after,
             "input_versions": input_versions,
             "promote": promote,
+            "run_at": run_at,
             "dispatched": False,
         }
         self._next_schedule_id += 1
@@ -89,6 +93,7 @@ class InMemoryScheduleStore:
     # -- ScheduleStore protocol ------------------------------------------
 
     def pending_schedules(self) -> list[PendingSchedule]:
+        now = datetime.now(timezone.utc).isoformat()
         return [
             PendingSchedule(
                 id=sid,
@@ -99,7 +104,7 @@ class InMemoryScheduleStore:
                 promote=s["promote"],
             )
             for sid, s in self._schedules.items()
-            if not s["dispatched"]
+            if not s["dispatched"] and (s["run_at"] is None or s["run_at"] <= now)
         ]
 
     def mark_schedule_dispatched(self, schedule_id: int, *, run_id: int) -> None:

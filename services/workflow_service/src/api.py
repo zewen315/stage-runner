@@ -94,6 +94,7 @@ class ScheduleResponse(BaseModel):
     workflow_name: str
     start_from: str | None
     stop_after: str | None
+    run_at: str | None
     status: str
     error: str | None
     run_id: int | None
@@ -143,6 +144,7 @@ class RequestRunRequest(BaseModel):
     stop_after: str | None = None
     input_versions: dict[str, int] | None = None
     promote: bool | None = None
+    run_at: str | None = None
 
 
 class CompleteStageRunRequest(BaseModel):
@@ -170,7 +172,9 @@ def request_run(
     service: WorkflowService = Depends(get_service),
 ):
     body = body or RequestRunRequest()
-    schedule = service.request_run(name, body.start_from, body.stop_after, body.input_versions, body.promote)
+    schedule = service.request_run(
+        name, body.start_from, body.stop_after, body.input_versions, body.promote, body.run_at
+    )
     return service.get_schedule_status(name, schedule.id)
 
 

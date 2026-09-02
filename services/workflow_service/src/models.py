@@ -51,6 +51,10 @@ class Schedule:
     input_versions: dict[str, int] | None
     promote: bool | None
     requested_at: str
+    run_at: str | None
+    """None means eligible for dispatch as soon as the Scheduler sees it
+    (today's only behavior); set means the Scheduler won't dispatch it
+    before then."""
     dispatched_at: str | None
     run_id: int | None
 
@@ -74,6 +78,7 @@ class ScheduleStatus:
     workflow_name: str
     start_from: str | None
     stop_after: str | None
+    run_at: str | None
     status: str
     error: str | None
     run_id: int | None

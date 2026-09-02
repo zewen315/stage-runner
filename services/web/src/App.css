@@ -486,6 +486,12 @@ a.run-card:hover {
   margin: -0.1rem 0 0.5rem;
 }
 
+.hint-inline {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
 .input-row {
   display: flex;
   align-items: center;

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     input_versions JSONB,
     promote        BOOLEAN,
     requested_at   TIMESTAMPTZ NOT NULL,
+    run_at         TIMESTAMPTZ,
     dispatched_at  TIMESTAMPTZ,
     run_id         BIGINT REFERENCES runs(id)
 );
@@ -74,7 +75,7 @@ class PostgresScheduleStore:
         with self._conn.cursor() as cur:
             cur.execute(
                 "SELECT id, workflow_name, start_from, stop_after, input_versions, promote "
-                "FROM schedules WHERE dispatched_at IS NULL"
+                "FROM schedules WHERE dispatched_at IS NULL AND (run_at IS NULL OR run_at <= now())"
             )
             return [
                 PendingSchedule(
