@@ -485,40 +485,88 @@ a.run-card:hover {
   gap: 0.5rem !important;
 }
 
-/* -- tables (resource detail) ------------------------------------- */
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
+.radio-group {
+  display: flex;
+  gap: 1.25rem;
+  margin-top: -0.4rem;
 }
 
-.table th,
-.table td {
-  text-align: left;
-  padding: 0.5rem 0.25rem;
-  border-bottom: 1px solid var(--border);
+.radio-option {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.4rem !important;
+  font-weight: 400 !important;
+}
+
+/* -- resource versions --------------------------------------------- */
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
   font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
 }
 
-.table th {
-  color: var(--text-muted);
-  font-weight: 600;
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.version-card {
+  padding: 0.85rem 1rem;
+}
+
+.version-card.current-card {
+  border-color: var(--accent);
+}
+
+.version-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.version-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.version-number {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.version-time {
   font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.version-body {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.version-body-label {
+  font-size: 0.72rem;
+  font-weight: 700;
   text-transform: uppercase;
-}
-
-.table tr:last-child td {
-  border-bottom: none;
-}
-
-.table tr.current-row {
-  background: #f5f4ff;
+  color: var(--text-muted);
+  margin: 0.6rem 0 0.2rem;
 }
 
 .row-actions {
   display: flex;
   gap: 0.4rem;
-  justify-content: flex-end;
 }
 
 .value-view {

@@ -74,6 +74,10 @@ export function getVersion(name, version) {
   return request(`/resources/${name}/versions/${version}`)
 }
 
+export function getDependencies(name, version) {
+  return request(`/resources/${name}/versions/${version}/dependencies`)
+}
+
 export function promote(name, version) {
   return request(`/resources/${name}/promotions`, {
     method: 'POST',
