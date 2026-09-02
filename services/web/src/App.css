@@ -84,12 +84,39 @@ a {
   z-index: 10;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1.75rem;
+}
+
 .brand {
   font-weight: 700;
   font-size: 1.05rem;
   color: var(--text);
   text-decoration: none;
   letter-spacing: -0.01em;
+}
+
+.topbar-nav {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.87rem;
+  font-weight: 500;
+}
+
+.nav-link:hover {
+  color: var(--text);
+}
+
+.nav-link-active {
+  color: var(--accent);
+  font-weight: 650;
 }
 
 .content {
@@ -100,6 +127,12 @@ a {
 
 .page-narrow {
   max-width: 640px;
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem 3rem;
+}
+
+.page-wide {
+  max-width: 900px;
   margin: 0 auto;
   padding: 1.75rem 1.5rem 3rem;
 }
@@ -239,6 +272,70 @@ button {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 1.1rem 1.25rem;
+}
+
+/* -- entity lists (workflows/resources) -------------------------------- */
+
+.entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.entity-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+a.entity-card-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.09);
+}
+
+.entity-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.entity-name {
+  font-weight: 650;
+  font-size: 0.95rem;
+}
+
+.entity-card-empty {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+}
+
+.mini-run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+}
+
+.mini-run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.82rem;
+}
+
+.mini-run-row:hover {
+  background: var(--bg);
+}
+
+.mini-run-time {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.76rem;
 }
 
 .run-card {
