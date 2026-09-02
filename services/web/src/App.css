@@ -17,6 +17,8 @@
   --completed-bg: #dcfce7;
   --failed: #dc2626;
   --failed-bg: #fee2e2;
+  --skipped: #9ca3af;
+  --skipped-bg: #f3f4f6;
 }
 
 * {
@@ -271,6 +273,10 @@ a.run-card:hover {
   border-left-color: var(--failed);
 }
 
+.status-border-skipped {
+  border-left-color: var(--border);
+}
+
 .run-card-top {
   display: flex;
   align-items: center;
@@ -336,6 +342,11 @@ a.run-card:hover {
 .status-requested {
   background: var(--requested-bg);
   color: var(--requested);
+}
+
+.status-skipped {
+  background: var(--skipped-bg);
+  color: var(--skipped);
 }
 
 /* -- run detail ------------------------------------------------------- */
@@ -404,6 +415,10 @@ a.run-card:hover {
   margin-top: 0.35rem;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.stage-card-skipped {
+  opacity: 0.65;
 }
 
 /* -- forms ----------------------------------------------------------- */

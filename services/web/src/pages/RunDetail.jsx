@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getRun, listStageRuns } from '../api.js'
+import { getRun, listStageRuns, listStages } from '../api.js'
 
 const TERMINAL = new Set(['completed', 'failed'])
 
 export default function RunDetail() {
   const { name, runId } = useParams()
   const [run, setRun] = useState(null)
+  const [stages, setStages] = useState(null)
   const [stageRuns, setStageRuns] = useState([])
   const [error, setError] = useState(null)
   const intervalRef = useRef(null)
@@ -16,10 +17,15 @@ export default function RunDetail() {
 
     async function load() {
       try {
-        const [r, sr] = await Promise.all([getRun(name, runId), listStageRuns(name, runId)])
+        const [r, sr, stageList] = await Promise.all([
+          getRun(name, runId),
+          listStageRuns(name, runId),
+          listStages(name),
+        ])
         if (cancelled) return
         setRun(r)
         setStageRuns(sr)
+        setStages(stageList)
         if (TERMINAL.has(r.status) && intervalRef.current) {
           clearInterval(intervalRef.current)
           intervalRef.current = null
@@ -39,7 +45,9 @@ export default function RunDetail() {
   }, [name, runId])
 
   if (error) return <p className="error">{error}</p>
-  if (!run) return <p className="muted">Loading...</p>
+  if (!run || !stages) return <p className="muted">Loading...</p>
+
+  const stageRunByName = Object.fromEntries(stageRuns.map((sr) => [sr.stage_name, sr]))
 
   return (
     <div className="page-narrow">
@@ -77,21 +85,42 @@ export default function RunDetail() {
 
       <h2>Stages</h2>
       <div className="stage-list">
-        {stageRuns.map((sr) => (
-          <div key={sr.id} className={`stage-card status-border-${sr.status}`}>
-            <div className="stage-card-top">
-              <span className="stage-name">{sr.stage_name}</span>
-              <span className={`status status-${sr.status}`}>{sr.status}</span>
-            </div>
-            <div className="stage-card-meta">
-              <span>in: {formatResources(sr.input_versions)}</span>
-              <span>
-                out: {sr.output_version != null ? <ResourceLink name={sr.stage_name} version={sr.output_version} /> : '—'}
-              </span>
-            </div>
-            {sr.error && <p className="error">{sr.error}</p>}
-          </div>
-        ))}
+        {stages.map((stage) => {
+          const sr = stageRunByName[stage.name]
+          return sr ? <RanStageCard key={stage.name} sr={sr} /> : <NotRunStageCard key={stage.name} stage={stage} />
+        })}
+      </div>
+    </div>
+  )
+}
+
+function RanStageCard({ sr }) {
+  return (
+    <div className={`stage-card status-border-${sr.status}`}>
+      <div className="stage-card-top">
+        <span className="stage-name">{sr.stage_name}</span>
+        <span className={`status status-${sr.status}`}>{sr.status}</span>
+      </div>
+      <div className="stage-card-meta">
+        <span>in: {formatResources(sr.input_versions)}</span>
+        <span>
+          out: {sr.output_version != null ? <ResourceLink name={sr.stage_name} version={sr.output_version} /> : '—'}
+        </span>
+      </div>
+      {sr.error && <p className="error">{sr.error}</p>}
+    </div>
+  )
+}
+
+function NotRunStageCard({ stage }) {
+  return (
+    <div className="stage-card status-border-skipped stage-card-skipped">
+      <div className="stage-card-top">
+        <span className="stage-name">{stage.name}</span>
+        <span className="status status-skipped">not run</span>
+      </div>
+      <div className="stage-card-meta">
+        <span>depends on: {stage.depends_on.length === 0 ? '(nothing)' : stage.depends_on.join(', ')}</span>
       </div>
     </div>
   )
