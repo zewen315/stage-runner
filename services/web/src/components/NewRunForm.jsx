@@ -1,13 +1,11 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
 import { getResource, listStages, listVersions, listWorkflows, requestRun } from '../api.js'
 
 const BEGINNING = ''
 
-export default function NewRun() {
-  const navigate = useNavigate()
+export default function NewRunForm({ initialWorkflow = '', initialStartFrom = '', onDone }) {
   const [workflows, setWorkflows] = useState(null)
-  const [workflowName, setWorkflowName] = useState('')
+  const [workflowName, setWorkflowName] = useState(initialWorkflow)
   const [loadError, setLoadError] = useState(null)
 
   const [stages, setStages] = useState([])
@@ -17,6 +15,8 @@ export default function NewRun() {
   const [promote, setPromote] = useState(false)
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+
+  const pendingInitialStartFrom = useRef(initialStartFrom)
 
   useEffect(() => {
     listWorkflows()
@@ -29,15 +29,24 @@ export default function NewRun() {
 
   useEffect(() => {
     if (!workflowName) return
-    setStartFrom(BEGINNING)
-    setJustThisStage(false)
-    setInputs([])
     listStages(workflowName)
-      .then(setStages)
+      .then((stageList) => {
+        setStages(stageList)
+        const toApply = pendingInitialStartFrom.current
+        pendingInitialStartFrom.current = null
+        if (toApply && stageList.some((s) => s.name === toApply)) {
+          applyStartFrom(toApply, stageList)
+        } else {
+          setStartFrom(BEGINNING)
+          setJustThisStage(false)
+          setInputs([])
+        }
+      })
       .catch((e) => setFormError(e.message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowName])
 
-  async function handleStartFromChange(name) {
+  async function applyStartFrom(name, stageList) {
     setStartFrom(name)
     setJustThisStage(false)
     if (name === BEGINNING) {
@@ -45,7 +54,7 @@ export default function NewRun() {
       return
     }
 
-    const stage = stages.find((s) => s.name === name)
+    const stage = stageList.find((s) => s.name === name)
     const deps = stage?.depends_on || []
     setInputs(deps.map((dep) => ({ key: dep, versions: [], value: '' })))
 
@@ -99,7 +108,7 @@ export default function NewRun() {
     setSubmitting(true)
     try {
       await requestRun(workflowName, body)
-      navigate('/')
+      onDone()
     } catch (err) {
       setFormError(err.message)
       setSubmitting(false)
@@ -110,10 +119,9 @@ export default function NewRun() {
   if (workflows === null) return <p className="muted">Loading...</p>
 
   return (
-    <div className="page-narrow">
-      <h1>New run</h1>
-
-      <form onSubmit={handleSubmit} className="card form">
+    <>
+      <h2>New run</h2>
+      <form onSubmit={handleSubmit} className="form">
         <label>
           Workflow
           <select value={workflowName} onChange={(e) => setWorkflowName(e.target.value)}>
@@ -128,7 +136,7 @@ export default function NewRun() {
 
         <label>
           Start from
-          <select value={startFrom} onChange={(e) => handleStartFromChange(e.target.value)}>
+          <select value={startFrom} onChange={(e) => applyStartFrom(e.target.value, stages)}>
             <option value={BEGINNING}>(Beginning)</option>
             {stages.map((stage) => (
               <option key={stage.name} value={stage.name}>
@@ -141,11 +149,7 @@ export default function NewRun() {
         {startFrom !== BEGINNING && (
           <div className="radio-group">
             <label className="radio-option">
-              <input
-                type="radio"
-                checked={!justThisStage}
-                onChange={() => setJustThisStage(false)}
-              />
+              <input type="radio" checked={!justThisStage} onChange={() => setJustThisStage(false)} />
               Run to the end
             </label>
             <label className="radio-option">
@@ -186,10 +190,15 @@ export default function NewRun() {
 
         {formError && <p className="error">{formError}</p>}
 
-        <button type="submit" className="btn-primary" disabled={submitting || !workflowName}>
-          {submitting ? 'Requesting...' : 'Trigger run'}
-        </button>
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost" onClick={onDone}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={submitting || !workflowName}>
+            {submitting ? 'Requesting...' : 'Trigger run'}
+          </button>
+        </div>
       </form>
-    </div>
+    </>
   )
 }

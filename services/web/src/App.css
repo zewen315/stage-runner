@@ -362,6 +362,12 @@ a.run-card:hover {
   margin-top: 0.2rem;
 }
 
+.run-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .run-error {
   margin: 0.75rem 0 0;
 }
@@ -415,6 +421,10 @@ a.run-card:hover {
   margin-top: 0.35rem;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.stage-card-actions {
+  margin-top: 0.6rem;
 }
 
 .stage-card-skipped {
@@ -594,4 +604,71 @@ a.run-card:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   overflow-x: auto;
   white-space: pre;
+}
+
+/* -- modals ---------------------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 18, 25, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 100;
+}
+
+.modal-panel {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.25);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 420px;
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+}
+
+.modal-panel-form {
+  max-width: 480px;
+}
+
+.modal-panel h2 {
+  margin-top: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  font-size: 1.15rem;
+}
+
+.modal-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.modal-close:hover {
+  color: var(--text);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.2rem;
+}
+
+.modal-body {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getDependencies, getResource, getVersion, listVersions, promote } from '../api.js'
+import Modal from '../components/Modal.jsx'
 
 export default function ResourceDetail() {
   const { name } = useParams()
@@ -10,6 +11,7 @@ export default function ResourceDetail() {
   const [versions, setVersions] = useState(null)
   const [error, setError] = useState(null)
   const [promoting, setPromoting] = useState(null)
+  const [confirmVersion, setConfirmVersion] = useState(null)
 
   const requestedVersion = Number(searchParams.get('version')) || null
   const [expanded, setExpanded] = useState(requestedVersion)
@@ -45,7 +47,9 @@ export default function ResourceDetail() {
     setExpanded((prev) => (prev === version ? null : version))
   }
 
-  async function handlePromote(version) {
+  async function confirmPromote() {
+    const version = confirmVersion
+    setConfirmVersion(null)
     setPromoting(version)
     try {
       await promote(name, version)
@@ -96,7 +100,7 @@ export default function ResourceDetail() {
                   {v.version !== current && (
                     <button
                       className="btn-ghost"
-                      onClick={() => handlePromote(v.version)}
+                      onClick={() => setConfirmVersion(v.version)}
                       disabled={promoting === v.version}
                     >
                       {promoting === v.version ? 'Promoting...' : 'Promote'}
@@ -138,6 +142,32 @@ export default function ResourceDetail() {
             )
           })}
         </div>
+      )}
+
+      {confirmVersion !== null && (
+        <Modal onClose={() => setConfirmVersion(null)}>
+          <h2>Promote {name} v{confirmVersion}?</h2>
+          <div className="modal-body">
+            <p>
+              This makes v{confirmVersion} the <strong>current</strong> version of {name} -- any run that
+              doesn't pin a specific version for {name} will use this one from now on, including new runs
+              triggered after this.
+            </p>
+            {current !== null && (
+              <p>
+                It replaces v{current}, the version currently in that role.
+              </p>
+            )}
+          </div>
+          <div className="modal-actions">
+            <button className="btn-ghost" onClick={() => setConfirmVersion(null)}>
+              Cancel
+            </button>
+            <button className="btn-primary" onClick={confirmPromote}>
+              Promote
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   )

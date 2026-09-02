@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getRun, listStageRuns, listStages } from '../api.js'
+import { useNewRunModal } from '../NewRunModalContext.jsx'
 
 const TERMINAL = new Set(['completed', 'failed'])
 
 export default function RunDetail() {
   const { name, runId } = useParams()
+  const { open } = useNewRunModal()
   const [run, setRun] = useState(null)
   const [stages, setStages] = useState(null)
   const [stageRuns, setStageRuns] = useState([])
@@ -62,7 +64,12 @@ export default function RunDetail() {
           <span className="workflow-pill">{run.workflow_name}</span>
           <h1>Run #{run.id}</h1>
         </div>
-        <span className={`status status-lg status-${run.status}`}>{run.status}</span>
+        <div className="run-header-actions">
+          <span className={`status status-lg status-${run.status}`}>{run.status}</span>
+          <button className="btn-ghost" onClick={() => open({ workflow: run.workflow_name })}>
+            Rerun
+          </button>
+        </div>
       </div>
 
       <div className="card">
@@ -87,14 +94,19 @@ export default function RunDetail() {
       <div className="stage-list">
         {stages.map((stage) => {
           const sr = stageRunByName[stage.name]
-          return sr ? <RanStageCard key={stage.name} sr={sr} /> : <NotRunStageCard key={stage.name} stage={stage} />
+          const onRunFromHere = () => open({ workflow: run.workflow_name, startFrom: stage.name })
+          return sr ? (
+            <RanStageCard key={stage.name} sr={sr} onRunFromHere={onRunFromHere} />
+          ) : (
+            <NotRunStageCard key={stage.name} stage={stage} onRunFromHere={onRunFromHere} />
+          )
         })}
       </div>
     </div>
   )
 }
 
-function RanStageCard({ sr }) {
+function RanStageCard({ sr, onRunFromHere }) {
   return (
     <div className={`stage-card status-border-${sr.status}`}>
       <div className="stage-card-top">
@@ -108,11 +120,16 @@ function RanStageCard({ sr }) {
         </span>
       </div>
       {sr.error && <p className="error">{sr.error}</p>}
+      <div className="row-actions stage-card-actions">
+        <button className="btn-ghost" onClick={onRunFromHere}>
+          Run from here
+        </button>
+      </div>
     </div>
   )
 }
 
-function NotRunStageCard({ stage }) {
+function NotRunStageCard({ stage, onRunFromHere }) {
   return (
     <div className="stage-card status-border-skipped stage-card-skipped">
       <div className="stage-card-top">
@@ -121,6 +138,11 @@ function NotRunStageCard({ stage }) {
       </div>
       <div className="stage-card-meta">
         <span>depends on: {stage.depends_on.length === 0 ? '(nothing)' : stage.depends_on.join(', ')}</span>
+      </div>
+      <div className="row-actions stage-card-actions">
+        <button className="btn-ghost" onClick={onRunFromHere}>
+          Run from here
+        </button>
       </div>
     </div>
   )
